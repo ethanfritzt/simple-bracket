@@ -8,8 +8,9 @@ import { z } from 'zod'
 
 const app = express()
 const port = Number(process.env.PORT ?? 5174)
-const dataDir = path.join(process.cwd(), 'data')
+const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), 'data')
 const dbPath = path.join(dataDir, 'bracket.db')
+const distDir = path.join(process.cwd(), 'dist')
 
 mkdirSync(dataDir, { recursive: true })
 
@@ -631,6 +632,12 @@ app.post('/api/reset', (_request, response) => {
   }
 
   response.json(getState(latest.id))
+})
+
+app.use(express.static(distDir))
+
+app.get(/.*/, (_request, response) => {
+  response.sendFile(path.join(distDir, 'index.html'))
 })
 
 app.listen(port, () => {
