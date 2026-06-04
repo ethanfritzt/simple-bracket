@@ -22,7 +22,6 @@ npm run build
 
 ## Features
 
-- 4, 8, or 16-player single-elimination bracket generation
 - Multiple saved tournaments
 - Host-created join links for participant registration
 - Public participant join page
