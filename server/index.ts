@@ -39,6 +39,7 @@ type ParticipantRow = {
 }
 
 const bracketSizes = [4, 8, 16] as const
+const maxBracketSize = bracketSizes[bracketSizes.length - 1]
 
 const participantSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -52,7 +53,6 @@ const matchSchema = z.object({
 
 const createTournamentSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  size: z.union([z.literal(4), z.literal(8), z.literal(16)]),
 })
 
 const joinSchema = z.object({
@@ -119,6 +119,10 @@ function seedOrder(size: number) {
   return [1, 16, 8, 9, 5, 12, 4, 13, 3, 14, 6, 11, 7, 10, 2, 15]
 }
 
+function bracketSizeForParticipantCount(count: number) {
+  return bracketSizes.find((size) => count <= size) ?? maxBracketSize
+}
+
 function getState(tournamentId: number) {
   const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(tournamentId)
   if (!tournament) return null
@@ -144,8 +148,11 @@ function createJoinCode() {
   return randomBytes(4).toString('hex')
 }
 
-function createTournament(name: string, size: number, rawParticipants: string[] = []) {
+function createTournament(name: string, rawParticipants: string[] = []) {
   const create = db.transaction(() => {
+    const bracketSize = rawParticipants.length > 0
+      ? bracketSizeForParticipantCount(rawParticipants.length)
+      : maxBracketSize
     const tournamentId = Number(
       db
         .prepare(
@@ -155,7 +162,7 @@ function createTournament(name: string, size: number, rawParticipants: string[] 
           name,
           'Single Elimination',
           rawParticipants.length > 0 ? 'In Progress' : 'Registration',
-          size,
+          bracketSize,
           createJoinCode(),
           rawParticipants.length > 0 ? 'started' : 'open',
         ).lastInsertRowid,
@@ -168,7 +175,7 @@ function createTournament(name: string, size: number, rawParticipants: string[] 
         participantName,
       )
     })
-    if (rawParticipants.length > 0) generateMatches(tournamentId, size)
+    if (rawParticipants.length > 0) generateMatches(tournamentId, bracketSize)
 
     return tournamentId
   })
@@ -256,16 +263,16 @@ function autoAdvanceByes(tournamentId: number) {
 function joinTournament(joinCode: string, name: string) {
   const join = db.transaction(() => {
     const tournament = db
-      .prepare('SELECT id, bracket_size, registration_status FROM tournaments WHERE join_code = ?')
+      .prepare('SELECT id, registration_status FROM tournaments WHERE join_code = ?')
       .get(joinCode) as
-      | { id: number; bracket_size: number; registration_status: string }
+      | { id: number; registration_status: string }
       | undefined
     if (!tournament || tournament.registration_status !== 'open') return null
 
     const count = db
       .prepare('SELECT COUNT(*) as count FROM participants WHERE tournament_id = ?')
       .get(tournament.id) as { count: number }
-    if (count.count >= tournament.bracket_size) return null
+    if (count.count >= maxBracketSize) return null
 
     db.prepare('INSERT INTO participants (tournament_id, seed, name) VALUES (?, ?, ?)').run(
       tournament.id,
@@ -308,8 +315,8 @@ function removeParticipant(participantId: number) {
 function startTournament(tournamentId: number) {
   const start = db.transaction(() => {
     const tournament = db
-      .prepare('SELECT bracket_size, registration_status FROM tournaments WHERE id = ?')
-      .get(tournamentId) as { bracket_size: number; registration_status: string } | undefined
+      .prepare('SELECT registration_status FROM tournaments WHERE id = ?')
+      .get(tournamentId) as { registration_status: string } | undefined
     if (!tournament || tournament.registration_status === 'started') return false
 
     const count = db
@@ -317,10 +324,11 @@ function startTournament(tournamentId: number) {
       .get(tournamentId) as { count: number }
     if (count.count < 2) return false
 
+    const bracketSize = bracketSizeForParticipantCount(count.count)
     db.prepare(
-      "UPDATE tournaments SET status = 'In Progress', registration_status = 'started', completed_at = NULL WHERE id = ?",
-    ).run(tournamentId)
-    generateMatches(tournamentId, tournament.bracket_size)
+      "UPDATE tournaments SET status = 'In Progress', registration_status = 'started', bracket_size = ?, completed_at = NULL WHERE id = ?",
+    ).run(bracketSize, tournamentId)
+    generateMatches(tournamentId, bracketSize)
 
     return true
   })
@@ -374,7 +382,7 @@ function updateTournamentStatus(tournamentId: number) {
 function ensureSeeded() {
   const count = db.prepare('SELECT COUNT(*) as count FROM tournaments').get() as { count: number }
   if (count.count === 0) {
-    createTournament('Friday Night Bracket', 8, [
+    createTournament('Friday Night Bracket', [
       'Atlas',
       'Blitz',
       'Comet',
@@ -468,7 +476,21 @@ app.get('/api/tournaments', (_request, response) => {
   response.json(
     db
       .prepare(
-        'SELECT id, name, format, status, bracket_size, created_at, completed_at FROM tournaments ORDER BY created_at DESC, id DESC',
+        `SELECT
+          tournaments.id,
+          tournaments.name,
+          tournaments.format,
+          tournaments.status,
+          tournaments.bracket_size,
+          tournaments.created_at,
+          tournaments.completed_at,
+          tournaments.join_code,
+          tournaments.registration_status,
+          COUNT(participants.id) as participant_count
+        FROM tournaments
+        LEFT JOIN participants ON participants.tournament_id = tournaments.id
+        GROUP BY tournaments.id
+        ORDER BY tournaments.created_at DESC, tournaments.id DESC`,
       )
       .all(),
   )
@@ -495,12 +517,12 @@ app.get('/api/tournaments/:id', (request, response) => {
 
 app.post('/api/tournaments', (request, response) => {
   const parsed = createTournamentSchema.safeParse(request.body)
-  if (!parsed.success || !bracketSizes.includes(parsed.data.size)) {
+  if (!parsed.success) {
     response.status(400).json({ error: 'Invalid tournament setup.' })
     return
   }
 
-  const tournamentId = createTournament(parsed.data.name, parsed.data.size)
+  const tournamentId = createTournament(parsed.data.name)
   response.status(201).json(getState(tournamentId))
 })
 

@@ -18,6 +18,7 @@ type Tournament = {
   completed_at: string | null
   join_code: string
   registration_status: 'open' | 'locked' | 'started'
+  participant_count?: number
 }
 
 type Participant = {
@@ -48,7 +49,7 @@ type BracketState = {
   matches: Match[]
 }
 
-const bracketSizes = [4, 8, 16]
+const maxRegistrationSpots = 16
 
 function App() {
   return (
@@ -66,24 +67,28 @@ function AdminPage() {
   const navigate = useNavigate()
   const [bracket, setBracket] = useState<BracketState | null>(null)
   const [tournaments, setTournaments] = useState<Tournament[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savingMatchId, setSavingMatchId] = useState<number | null>(null)
   const [newName, setNewName] = useState('Weekend Bracket')
-  const [newSize, setNewSize] = useState(8)
   const [allowCompletedEdits, setAllowCompletedEdits] = useState(false)
   const routeTournamentId = params.id ? Number(params.id) : null
 
   useEffect(() => {
     const controller = new AbortController()
     const bracketUrl = routeTournamentId ? `/api/tournaments/${routeTournamentId}` : '/api/tournament'
+    setLoaded(false)
 
     Promise.all([
       fetch('/api/tournaments', { signal: controller.signal }),
       fetch(bracketUrl, { signal: controller.signal }),
     ])
       .then(async ([tournamentsResponse, bracketResponse]) => {
-        if (!tournamentsResponse.ok || !bracketResponse.ok) {
-          throw new Error('Could not load the local bracket API. Is npm run dev active?')
+        if (!tournamentsResponse.ok) {
+          throw new Error(`Could not load saved tournaments (${tournamentsResponse.status}).`)
+        }
+        if (!bracketResponse.ok) {
+          throw new Error(`Could not load the selected tournament (${bracketResponse.status}).`)
         }
 
         return {
@@ -95,12 +100,14 @@ function AdminPage() {
         setError(null)
         setTournaments(state.tournaments)
         setBracket(state.bracket)
+        setLoaded(true)
         if (!routeTournamentId && state.bracket) {
           navigate(`/tournaments/${state.bracket.tournament.id}`, { replace: true })
         }
       })
       .catch((caughtError: unknown) => {
         if (caughtError instanceof DOMException && caughtError.name === 'AbortError') return
+        setLoaded(true)
         setError(caughtError instanceof Error ? caughtError.message : 'Could not load bracket.')
       })
 
@@ -131,7 +138,6 @@ function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newName,
-        size: newSize,
       }),
     })
 
@@ -272,6 +278,7 @@ function AdminPage() {
   const editingLocked = Boolean(isCompleted && !allowCompletedEdits)
   const joinUrl = bracket ? `${window.location.origin}/join/${bracket.tournament.join_code}` : ''
   const registrationOpen = bracket?.tournament.registration_status === 'open'
+  const hasNoTournaments = loaded && !bracket && tournaments.length === 0 && !error
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
@@ -321,7 +328,7 @@ function AdminPage() {
               </div>
               {bracket && registrationOpen ? (
                 <Button className="w-full" onClick={startBracket} disabled={bracket.participants.length < 2}>
-                  Start bracket ({bracket.participants.length}/{bracket.tournament.bracket_size})
+                  Start bracket ({bracket.participants.length} joined)
                 </Button>
               ) : null}
               {isCompleted ? (
@@ -373,20 +380,10 @@ function AdminPage() {
                   Tournament name
                   <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
                 </label>
-                <label className="space-y-1 text-sm font-medium text-slate-700">
-                  Bracket size
-                  <select
-                    value={newSize}
-                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                    onChange={(event) => setNewSize(Number(event.currentTarget.value))}
-                  >
-                    {bracketSizes.map((size) => (
-                      <option key={size} value={size}>
-                        {size} players
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <p className="text-sm leading-6 text-slate-500">
+                  The bracket size is chosen automatically when you start, based on how many
+                  participants have joined.
+                </p>
                 <Button className="w-full" onClick={createTournament}>
                   <Plus className="h-4 w-4" /> Create join link
                 </Button>
@@ -419,7 +416,7 @@ function AdminPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>
-                    Participants ({bracket.participants.length}/{bracket.tournament.bracket_size})
+                    Participants ({bracket.participants.length} joined)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -475,10 +472,16 @@ function AdminPage() {
                   >
                     <span className="block font-bold text-slate-900">{tournament.name}</span>
                     <span className="mt-1 block text-xs text-slate-500">
-                      {tournament.bracket_size} players · {tournament.status}
+                      {tournament.registration_status === 'open'
+                        ? `${tournament.participant_count ?? 0} joined`
+                        : `${tournament.bracket_size} players`}{' '}
+                      · {tournament.status}
                     </span>
                   </button>
                 ))}
+                {loaded && tournaments.length === 0 ? (
+                  <p className="text-sm text-slate-500">No saved tournaments yet.</p>
+                ) : null}
               </CardContent>
             </Card>
           </aside>
@@ -496,8 +499,9 @@ function AdminPage() {
                     </h2>
                   </div>
                   <p className="max-w-2xl text-slate-600">
-                    {bracket.participants.length}/{bracket.tournament.bracket_size} participants have joined.
-                    You can start once at least two people are registered. Any remaining slots stay TBD.
+                    {bracket.participants.length} participants have joined. You can start once at
+                    least two people are registered. The bracket will expand to the next supported
+                    size automatically, and any remaining slots stay TBD.
                   </p>
                   <div className="grid max-w-3xl gap-2 sm:grid-cols-2">
                     {bracket.participants.map((participant) => (
@@ -572,6 +576,23 @@ function AdminPage() {
                   </Card>
                 </div>
               </div>
+            ) : hasNoTournaments ? (
+              <Card className="border-sky-200 bg-white/85">
+                <CardContent className="space-y-4 p-8">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-600">
+                      Ready To Start
+                    </p>
+                    <h2 className="mt-2 text-3xl font-black text-slate-950">
+                      Create your first bracket
+                    </h2>
+                  </div>
+                  <p className="max-w-2xl text-slate-600">
+                    There are no saved tournaments in SQLite yet. Use the create form to make a
+                    join link, then share it with participants.
+                  </p>
+                </CardContent>
+              </Card>
             ) : (
               <Card className="border-slate-200 bg-white/80">
                 <CardContent className="p-8 text-sm text-slate-600">
@@ -633,7 +654,7 @@ function JoinPage() {
   }
 
   const spotsRemaining = bracket
-    ? Math.max(0, bracket.tournament.bracket_size - bracket.participants.length)
+    ? Math.max(0, maxRegistrationSpots - bracket.participants.length)
     : 0
   const registrationOpen = bracket?.tournament.registration_status === 'open'
 
@@ -645,7 +666,7 @@ function JoinPage() {
             <Badge className={registrationOpen ? 'bg-sky-600' : 'bg-slate-700'}>
               {registrationOpen ? 'Registration open' : 'Registration closed'}
             </Badge>
-            {bracket ? <Badge className="bg-orange-500">{spotsRemaining} spots left</Badge> : null}
+              {bracket ? <Badge className="bg-orange-500">{spotsRemaining} spots left</Badge> : null}
           </div>
           <CardTitle className="pt-3 text-3xl font-black">
             Join {bracket?.tournament.name ?? 'Bracket'}
@@ -678,7 +699,7 @@ function JoinPage() {
           </Button>
           <div className="rounded-2xl bg-slate-50 p-4">
             <p className="text-sm font-semibold text-slate-700">
-              {bracket?.participants.length ?? 0}/{bracket?.tournament.bracket_size ?? '-'} joined
+              {bracket?.participants.length ?? 0} joined
             </p>
             <div className="mt-3 grid gap-2">
               {bracket?.participants.map((participant) => (
