@@ -520,24 +520,26 @@ function AdminPage() {
 
         <section className="grid gap-6 lg:grid-cols-[22rem_1fr]">
           <aside className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Create Bracket</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <label className="space-y-1 text-sm font-medium text-slate-700">
-                  Tournament name
-                  <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
-                </label>
-                <p className="text-sm leading-6 text-slate-500">
-                  The bracket size is chosen automatically when you start, based on how many
-                  participants have joined.
-                </p>
-                <Button className="w-full" onClick={createTournament}>
-                  <Plus className="h-4 w-4" /> Create join link
-                </Button>
-              </CardContent>
-            </Card>
+            {!bracket ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Create Bracket</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <label className="space-y-1 text-sm font-medium text-slate-700">
+                    Tournament name
+                    <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
+                  </label>
+                  <p className="text-sm leading-6 text-slate-500">
+                    The bracket size is chosen automatically when you start, based on how many
+                    participants have joined.
+                  </p>
+                  <Button className="w-full" onClick={createTournament}>
+                    <Plus className="h-4 w-4" /> Create join link
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : null}
 
             {bracket ? (
               <Card>
