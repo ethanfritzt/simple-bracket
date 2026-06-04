@@ -54,11 +54,178 @@ const maxRegistrationSpots = 16
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<AdminPage />} />
+      <Route path="/" element={<CreateBracketPage />} />
+      <Route path="/brackets" element={<BracketsPage />} />
       <Route path="/tournaments/:id" element={<AdminPage />} />
       <Route path="/tournaments/:id/display" element={<DisplayPage />} />
       <Route path="/join/:joinCode" element={<JoinPage />} />
     </Routes>
+  )
+}
+
+function CreateBracketPage() {
+  const navigate = useNavigate()
+  const [newName, setNewName] = useState('Weekend Bracket')
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  async function createTournament() {
+    setCreating(true)
+    const response = await fetch('/api/tournaments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newName,
+      }),
+    })
+    setCreating(false)
+
+    if (!response.ok) {
+      setError('Could not create bracket. Enter a name and try again.')
+      return
+    }
+
+    setError(null)
+    const created = (await response.json()) as BracketState
+    navigate(`/tournaments/${created.tournament.id}`)
+  }
+
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
+      <section className="mx-auto flex min-h-screen w-full max-w-5xl flex-col justify-center gap-6 px-4 py-8 sm:px-6 lg:px-8">
+        <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-3 shadow-lg shadow-orange-200/20 backdrop-blur">
+          <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
+            Simple Bracket
+          </Link>
+          <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/brackets">
+            View brackets
+          </Link>
+        </nav>
+
+        <header className="grid gap-6 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_24rem] lg:p-8">
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="bg-orange-500">Single Elimination</Badge>
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                <Database className="h-3.5 w-3.5" /> SQLite persisted
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-600">
+                Create Bracket
+              </p>
+              <h1 className="mt-2 max-w-3xl text-4xl font-black tracking-tight text-slate-950 sm:text-6xl">
+                Start a new bracket without being dropped into an old one.
+              </h1>
+            </div>
+            <p className="max-w-2xl text-base leading-7 text-slate-600">
+              Name the bracket, create a join link, then share it with participants. Existing active and past brackets live on the brackets page.
+            </p>
+          </div>
+
+          <Card className="border-orange-200 bg-orange-50/90">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Plus className="h-5 w-5 text-orange-600" /> New Bracket
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {error ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
+              <label className="space-y-1 text-sm font-medium text-slate-700">
+                Bracket name
+                <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
+              </label>
+              <p className="text-sm leading-6 text-slate-500">
+                The bracket size is chosen automatically when you start, based on how many participants have joined.
+              </p>
+              <Button className="w-full" onClick={createTournament} disabled={creating || !newName.trim()}>
+                <Plus className="h-4 w-4" /> {creating ? 'Creating...' : 'Create join link'}
+              </Button>
+            </CardContent>
+          </Card>
+        </header>
+      </section>
+    </main>
+  )
+}
+
+function BracketsPage() {
+  const [tournaments, setTournaments] = useState<Tournament[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    fetch('/api/tournaments', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Could not load brackets (${response.status}).`)
+        return response.json() as Promise<Tournament[]>
+      })
+      .then((loadedTournaments) => {
+        setError(null)
+        setTournaments(loadedTournaments)
+        setLoaded(true)
+      })
+      .catch((caughtError: unknown) => {
+        if (caughtError instanceof DOMException && caughtError.name === 'AbortError') return
+        setLoaded(true)
+        setError(caughtError instanceof Error ? caughtError.message : 'Could not load brackets.')
+      })
+
+    return () => controller.abort()
+  }, [])
+
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
+      <section className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+        <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-3 shadow-lg shadow-orange-200/20 backdrop-blur">
+          <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
+            Simple Bracket
+          </Link>
+          <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/">
+            Create bracket
+          </Link>
+        </nav>
+
+        <header className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:p-8">
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-600">
+            Brackets
+          </p>
+          <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950 sm:text-6xl">
+            Past and active brackets
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+            Open an active bracket to manage registration, scores, display mode, or review completed brackets.
+          </p>
+        </header>
+
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <Card className="bg-white/85">
+          <CardHeader>
+            <CardTitle>Saved Brackets</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TournamentList tournaments={tournaments} />
+            {loaded && tournaments.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                No saved brackets yet. Create one to get started.
+              </div>
+            ) : null}
+            {!loaded ? <p className="text-sm text-slate-500">Loading brackets...</p> : null}
+          </CardContent>
+        </Card>
+      </section>
+    </main>
   )
 }
 
@@ -76,12 +243,10 @@ function AdminPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    const bracketUrl = routeTournamentId ? `/api/tournaments/${routeTournamentId}` : '/api/tournament'
-    setLoaded(false)
 
     Promise.all([
       fetch('/api/tournaments', { signal: controller.signal }),
-      fetch(bracketUrl, { signal: controller.signal }),
+      fetch(`/api/tournaments/${routeTournamentId}`, { signal: controller.signal }),
     ])
       .then(async ([tournamentsResponse, bracketResponse]) => {
         if (!tournamentsResponse.ok) {
@@ -101,9 +266,6 @@ function AdminPage() {
         setTournaments(state.tournaments)
         setBracket(state.bracket)
         setLoaded(true)
-        if (!routeTournamentId && state.bracket) {
-          navigate(`/tournaments/${state.bracket.tournament.id}`, { replace: true })
-        }
       })
       .catch((caughtError: unknown) => {
         if (caughtError instanceof DOMException && caughtError.name === 'AbortError') return
@@ -117,19 +279,6 @@ function AdminPage() {
   async function refreshTournaments() {
     const response = await fetch('/api/tournaments')
     if (response.ok) setTournaments(await response.json())
-  }
-
-  async function loadTournament(id: number) {
-    const response = await fetch(`/api/tournaments/${id}`)
-    if (!response.ok) {
-      setError('Could not load that tournament.')
-      return
-    }
-
-    setError(null)
-    setBracket(await response.json())
-    setAllowCompletedEdits(false)
-    navigate(`/tournaments/${id}`)
   }
 
   async function createTournament() {
@@ -245,7 +394,7 @@ function AdminPage() {
     const result = (await response.json()) as { nextTournament: BracketState | null }
     setBracket(result.nextTournament)
     setAllowCompletedEdits(false)
-    navigate(result.nextTournament ? `/tournaments/${result.nextTournament.tournament.id}` : '/')
+    navigate('/brackets')
     await refreshTournaments()
   }
 
@@ -455,33 +604,19 @@ function AdminPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Saved Tournaments</CardTitle>
+                <CardTitle>Saved Brackets</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {tournaments.map((tournament) => (
-                  <button
-                    key={tournament.id}
-                    type="button"
-                    className={cn(
-                      'w-full rounded-xl border p-3 text-left text-sm transition-colors hover:border-orange-300 hover:bg-orange-50',
-                      bracket?.tournament.id === tournament.id
-                        ? 'border-orange-300 bg-orange-50'
-                        : 'border-slate-200 bg-white',
-                    )}
-                    onClick={() => loadTournament(tournament.id)}
-                  >
-                    <span className="block font-bold text-slate-900">{tournament.name}</span>
-                    <span className="mt-1 block text-xs text-slate-500">
-                      {tournament.registration_status === 'open'
-                        ? `${tournament.participant_count ?? 0} joined`
-                        : `${tournament.bracket_size} players`}{' '}
-                      · {tournament.status}
-                    </span>
-                  </button>
-                ))}
+              <CardContent className="space-y-3">
+                <TournamentList tournaments={tournaments} selectedId={bracket?.tournament.id} />
                 {loaded && tournaments.length === 0 ? (
-                  <p className="text-sm text-slate-500">No saved tournaments yet.</p>
+                  <p className="text-sm text-slate-500">No saved brackets yet.</p>
                 ) : null}
+                <Link
+                  className="inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-200"
+                  to="/brackets"
+                >
+                  View all brackets
+                </Link>
               </CardContent>
             </Card>
           </aside>
@@ -604,6 +739,40 @@ function AdminPage() {
         </section>
       </section>
     </main>
+  )
+}
+
+type TournamentListProps = {
+  tournaments: Tournament[]
+  selectedId?: number
+}
+
+function TournamentList({ tournaments, selectedId }: TournamentListProps) {
+  if (tournaments.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      {tournaments.map((tournament) => (
+        <Link
+          key={tournament.id}
+          className={cn(
+            'block w-full rounded-xl border p-3 text-left text-sm transition-colors hover:border-orange-300 hover:bg-orange-50',
+            selectedId === tournament.id
+              ? 'border-orange-300 bg-orange-50'
+              : 'border-slate-200 bg-white',
+          )}
+          to={`/tournaments/${tournament.id}`}
+        >
+          <span className="block font-bold text-slate-900">{tournament.name}</span>
+          <span className="mt-1 block text-xs text-slate-500">
+            {tournament.registration_status === 'open'
+              ? `${tournament.participant_count ?? 0} joined`
+              : `${tournament.bracket_size} players`}{' '}
+            · {tournament.status}
+          </span>
+        </Link>
+      ))}
+    </div>
   )
 }
 
