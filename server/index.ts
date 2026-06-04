@@ -38,7 +38,7 @@ type ParticipantRow = {
   name: string
 }
 
-const bracketSizes = [4, 8, 16] as const
+const bracketSizes = [2, 4, 8, 16] as const
 const maxBracketSize = bracketSizes[bracketSizes.length - 1]
 
 const participantSchema = z.object({
@@ -114,6 +114,7 @@ function migrate() {
 }
 
 function seedOrder(size: number) {
+  if (size === 2) return [1, 2]
   if (size === 4) return [1, 4, 2, 3]
   if (size === 8) return [1, 8, 4, 5, 3, 6, 2, 7]
   return [1, 16, 8, 9, 5, 12, 4, 13, 3, 14, 6, 11, 7, 10, 2, 15]
