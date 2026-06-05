@@ -430,7 +430,7 @@ function AdminPage() {
   const hasNoTournaments = loaded && !bracket && tournaments.length === 0 && !error
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="grid gap-5 rounded-3xl border border-white/70 bg-white/75 p-5 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_22rem] lg:p-8">
           <div className="space-y-4">
@@ -518,7 +518,7 @@ function AdminPage() {
           </div>
         ) : null}
 
-        <section className="grid gap-6 lg:grid-cols-[22rem_1fr]">
+        <section className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
           <aside className="space-y-6">
             {!bracket ? (
               <Card>
@@ -623,7 +623,7 @@ function AdminPage() {
             </Card>
           </aside>
 
-          <section className="overflow-x-auto pb-6">
+          <section className="min-w-0 overflow-x-auto pb-6">
             {bracket && bracket.matches.length === 0 ? (
               <Card className="border-sky-200 bg-white/85">
                 <CardContent className="space-y-5 p-8">
@@ -653,8 +653,8 @@ function AdminPage() {
               <div
                 className="grid gap-8"
                 style={{
-                  gridTemplateColumns: `repeat(${rounds.length}, 19rem) 16rem`,
-                  minWidth: `${rounds.length * 336 + 256}px`,
+                  gridTemplateColumns: `repeat(${rounds.length}, 17rem) 14rem`,
+                  minWidth: `${rounds.length * 304 + 224}px`,
                 }}
               >
                 {rounds.map(({ round, matches }) => (
@@ -936,7 +936,7 @@ function DisplayPage() {
   }))
 
   return (
-    <main className="min-h-screen overflow-hidden bg-slate-950 text-white">
+    <main className="min-h-screen bg-slate-950 text-white">
       <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-8 px-5 py-6 sm:px-8">
         <header className="grid gap-5 rounded-3xl border border-white/10 bg-white/10 p-6 shadow-2xl shadow-black/30 backdrop-blur lg:grid-cols-[1fr_22rem]">
           <div className="space-y-4">
@@ -981,12 +981,12 @@ function DisplayPage() {
         </header>
 
         {bracket ? (
-          <section className="overflow-x-auto pb-6">
+          <section className="min-w-0 overflow-x-auto pb-6">
             <div
               className="grid gap-8"
               style={{
-                gridTemplateColumns: `repeat(${rounds.length}, 21rem) 18rem`,
-                minWidth: `${rounds.length * 368 + 288}px`,
+                gridTemplateColumns: `repeat(${rounds.length}, 18rem) 15rem`,
+                minWidth: `${rounds.length * 320 + 240}px`,
               }}
             >
               {rounds.map(({ round, matches }) => (

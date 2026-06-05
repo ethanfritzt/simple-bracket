@@ -113,13 +113,6 @@ function migrate() {
   })
 }
 
-function seedOrder(size: number) {
-  if (size === 2) return [1, 2]
-  if (size === 4) return [1, 4, 2, 3]
-  if (size === 8) return [1, 8, 4, 5, 3, 6, 2, 7]
-  return [1, 16, 8, 9, 5, 12, 4, 13, 3, 14, 6, 11, 7, 10, 2, 15]
-}
-
 function bracketSizeForParticipantCount(count: number) {
   return bracketSizes.find((size) => count <= size) ?? maxBracketSize
 }
@@ -140,7 +133,7 @@ function getState(tournamentId: number) {
     participants,
     matches: matches.map((match) => ({
       ...match,
-      status: match.winner_id ? 'completed' : match.player1_id && match.player2_id ? 'ready' : 'pending',
+      status: match.winner_id ? 'completed' : match.player1_id || match.player2_id ? 'ready' : 'pending',
     })),
   }
 }
@@ -202,14 +195,13 @@ function generateMatches(tournamentId: number, size: number) {
   `)
   const matchIds = new Map<string, number>()
   const totalRounds = Math.log2(size)
-  const seeded = seedOrder(size)
 
   for (let round = 1; round <= totalRounds; round += 1) {
     const matchCount = size / 2 ** round
     for (let position = 1; position <= matchCount; position += 1) {
       const seedIndex = (position - 1) * 2
-      const player1Id = round === 1 ? participantIdsBySeed.get(seeded[seedIndex]) ?? null : null
-      const player2Id = round === 1 ? participantIdsBySeed.get(seeded[seedIndex + 1]) ?? null : null
+      const player1Id = round === 1 ? participantIdsBySeed.get(seedIndex + 1) ?? null : null
+      const player2Id = round === 1 ? participantIdsBySeed.get(seedIndex + 2) ?? null : null
       const id = Number(
         insertMatch.run(tournamentId, round, position, player1Id, player2Id).lastInsertRowid,
       )
@@ -228,33 +220,6 @@ function generateMatches(tournamentId: number, size: number) {
       if (matchId && nextMatchId) {
         updateProgression.run(nextMatchId, position % 2 === 1 ? 1 : 2, matchId)
       }
-    }
-  }
-
-  autoAdvanceByes(tournamentId)
-}
-
-function autoAdvanceByes(tournamentId: number) {
-  let changed = true
-
-  while (changed) {
-    changed = false
-    const matches = db
-      .prepare(
-        'SELECT * FROM matches WHERE tournament_id = ? AND winner_id IS NULL ORDER BY round, position',
-      )
-      .all(tournamentId) as MatchRow[]
-
-    for (const match of matches) {
-      const winnerId = match.player1_id && !match.player2_id ? match.player1_id : !match.player1_id && match.player2_id ? match.player2_id : null
-      if (!winnerId) continue
-
-      db.prepare('UPDATE matches SET winner_id = ? WHERE id = ?').run(winnerId, match.id)
-      if (match.next_match_id && match.next_slot) {
-        const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
-        db.prepare(`UPDATE matches SET ${slotColumn} = ? WHERE id = ?`).run(winnerId, match.next_match_id)
-      }
-      changed = true
     }
   }
 
