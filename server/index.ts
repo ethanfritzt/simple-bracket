@@ -177,6 +177,16 @@ function createTournament(name: string, rawParticipants: string[] = []) {
   return create()
 }
 
+function getTournamentSeeds(size: number): number[] {
+  let seeds = [1, 2]
+  let currentSize = 2
+  while (currentSize < size) {
+    currentSize *= 2
+    seeds = seeds.flatMap(s => [s, currentSize + 1 - s])
+  }
+  return seeds
+}
+
 function generateMatches(tournamentId: number, size: number) {
   db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId)
 
@@ -184,10 +194,15 @@ function generateMatches(tournamentId: number, size: number) {
   const participants = db
     .prepare('SELECT * FROM participants WHERE tournament_id = ? ORDER BY seed')
     .all(tournamentId) as ParticipantRow[]
-  participants.forEach((participant) => {
-    participantIdsBySeed.set(participant.seed, participant.id)
-  })
 
+  const participantIds = participants.map(p => p.id)
+  for (let i = participantIds.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [participantIds[i], participantIds[j]] = [participantIds[j], participantIds[i]]
+  }
+  participantIds.forEach((id, index) => participantIdsBySeed.set(index + 1, id))
+
+  const seeds = getTournamentSeeds(size)
   const insertMatch = db.prepare(`
     INSERT INTO matches
       (tournament_id, round, position, player1_id, player2_id, player1_score, player2_score, winner_id, next_match_id, next_slot)
@@ -199,9 +214,8 @@ function generateMatches(tournamentId: number, size: number) {
   for (let round = 1; round <= totalRounds; round += 1) {
     const matchCount = size / 2 ** round
     for (let position = 1; position <= matchCount; position += 1) {
-      const seedIndex = (position - 1) * 2
-      const player1Id = round === 1 ? participantIdsBySeed.get(seedIndex + 1) ?? null : null
-      const player2Id = round === 1 ? participantIdsBySeed.get(seedIndex + 2) ?? null : null
+      const player1Id = round === 1 ? participantIdsBySeed.get(seeds[(position - 1) * 2]) ?? null : null
+      const player2Id = round === 1 ? participantIdsBySeed.get(seeds[(position - 1) * 2 + 1]) ?? null : null
       const id = Number(
         insertMatch.run(tournamentId, round, position, player1Id, player2Id).lastInsertRowid,
       )
@@ -220,6 +234,22 @@ function generateMatches(tournamentId: number, size: number) {
       if (matchId && nextMatchId) {
         updateProgression.run(nextMatchId, position % 2 === 1 ? 1 : 2, matchId)
       }
+    }
+  }
+
+  const byeMatches = db
+    .prepare(
+      `SELECT * FROM matches WHERE tournament_id = ? AND round = 1
+       AND ((player1_id IS NOT NULL AND player2_id IS NULL) OR (player1_id IS NULL AND player2_id IS NOT NULL))`,
+    )
+    .all(tournamentId) as MatchRow[]
+
+  for (const match of byeMatches) {
+    const winnerId = match.player1_id ?? match.player2_id
+    db.prepare('UPDATE matches SET winner_id = ? WHERE id = ?').run(winnerId, match.id)
+    if (match.next_match_id && match.next_slot) {
+      const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
+      db.prepare(`UPDATE matches SET ${slotColumn} = ? WHERE id = ?`).run(winnerId, match.next_match_id)
     }
   }
 
