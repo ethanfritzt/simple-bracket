@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { Copy, Crown, Database, Lock, Plus, RotateCcw, Save, Trash2, Trophy } from 'lucide-react'
 import { Link, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 
@@ -140,7 +140,7 @@ function CreateBracketPage() {
                 <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
               </label>
               <p className="text-sm leading-6 text-slate-500">
-                The bracket size is chosen automatically when you start, based on how many participants have joined.
+                Round 1 pairs everyone possible when you start, with the last seed receiving the bye for odd participant counts.
               </p>
               <Button className="w-full" onClick={createTournament} disabled={creating || !newName.trim()}>
                 <Plus className="h-4 w-4" /> {creating ? 'Creating...' : 'Create join link'}
@@ -238,6 +238,7 @@ function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [savingMatchId, setSavingMatchId] = useState<number | null>(null)
   const [newName, setNewName] = useState('Weekend Bracket')
+  const [newParticipantName, setNewParticipantName] = useState('')
   const [allowCompletedEdits, setAllowCompletedEdits] = useState(false)
   const routeTournamentId = params.id ? Number(params.id) : null
 
@@ -325,6 +326,27 @@ function AdminPage() {
     }
 
     setError(null)
+    setBracket(await response.json())
+    await refreshTournaments()
+  }
+
+  async function addParticipant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!bracket || !newParticipantName.trim()) return
+
+    const response = await fetch(`/api/tournaments/${bracket.tournament.id}/participants`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newParticipantName }),
+    })
+
+    if (!response.ok) {
+      setError('Could not add that participant. Registration may be closed or full.')
+      return
+    }
+
+    setError(null)
+    setNewParticipantName('')
     setBracket(await response.json())
     await refreshTournaments()
   }
@@ -452,8 +474,8 @@ function AdminPage() {
               </h1>
             </div>
             <p className="max-w-2xl text-base leading-7 text-slate-600">
-              Create a bracket, share the join link, let participants register themselves, then
-              start when the field is ready. Empty slots become TBD/byes.
+              Create a bracket, add participants manually or share the join link, then start
+              when the field is ready. Later-round slots stay TBD until winners advance.
               {bracket?.tournament.completed_at
                 ? ` Completed ${formatDate(bracket.tournament.completed_at)}.`
                 : ''}
@@ -531,8 +553,8 @@ function AdminPage() {
                     <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
                   </label>
                   <p className="text-sm leading-6 text-slate-500">
-                    The bracket size is chosen automatically when you start, based on how many
-                    participants have joined.
+                    Round 1 pairs everyone possible when you start, with the last seed receiving
+                    the bye for odd participant counts.
                   </p>
                   <Button className="w-full" onClick={createTournament}>
                     <Plus className="h-4 w-4" /> Create join link
@@ -557,7 +579,7 @@ function AdminPage() {
                     <Copy className="h-4 w-4" /> Copy join link
                   </Button>
                   <p className="text-xs leading-5 text-slate-500">
-                    Share this with participants. They can join until the bracket is started.
+                    Share this with participants, or enter them manually below. Registration stays open until the bracket is started.
                   </p>
                 </CardContent>
               </Card>
@@ -571,8 +593,24 @@ function AdminPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
+                  {registrationOpen ? (
+                    <form className="flex gap-2" onSubmit={addParticipant}>
+                      <Input
+                        value={newParticipantName}
+                        onChange={(event) => setNewParticipantName(event.currentTarget.value)}
+                        placeholder="Participant name"
+                        disabled={bracket.participants.length >= maxRegistrationSpots}
+                      />
+                      <Button
+                        type="submit"
+                        disabled={!newParticipantName.trim() || bracket.participants.length >= maxRegistrationSpots}
+                      >
+                        <Plus className="h-4 w-4" /> Add
+                      </Button>
+                    </form>
+                  ) : null}
                   {bracket.participants.length === 0 ? (
-                    <p className="text-sm text-slate-500">Waiting for participants to join.</p>
+                    <p className="text-sm text-slate-500">Waiting for participants to join or be added manually.</p>
                   ) : null}
                   {bracket.participants.map((participant) => (
                     <div
@@ -632,13 +670,13 @@ function AdminPage() {
                       Registration Open
                     </p>
                     <h2 className="mt-2 text-3xl font-black text-slate-950">
-                      Share the join link to fill the bracket
+                      Add participants or share the join link to fill the bracket
                     </h2>
                   </div>
                   <p className="max-w-2xl text-slate-600">
                     {bracket.participants.length} participants have joined. You can start once at
-                    least two people are registered. The bracket will expand to the next supported
-                    size automatically, and any remaining slots stay TBD.
+                    least two people are registered. Round 1 pairs everyone possible, with the
+                    last seed receiving the bye when the participant count is odd.
                   </p>
                   <div className="grid max-w-3xl gap-2 sm:grid-cols-2">
                     {bracket.participants.map((participant) => (
@@ -1189,7 +1227,7 @@ function MatchCard({
           onPatch={onPatch}
           onUpdateParticipant={onUpdateParticipant}
           onPickWinner={(winnerId) => onSave(match, winnerId)}
-          disabled={editingLocked}
+          disabled={editingLocked || match.status === 'pending'}
         />
         <PlayerRow
           slot="player2_score"
@@ -1199,7 +1237,7 @@ function MatchCard({
           onPatch={onPatch}
           onUpdateParticipant={onUpdateParticipant}
           onPickWinner={(winnerId) => onSave(match, winnerId)}
-          disabled={editingLocked}
+          disabled={editingLocked || match.status === 'pending'}
         />
         {match.winner_id ? (
           <Button
