@@ -45,9 +45,9 @@ type ParticipantRow = {
 type BracketEntrant =
   | { type: 'participant'; id: number }
   | { type: 'match'; matchId: number }
+  | { type: 'bye' }
 
 const maxBracketSize = 16
-const supportedDoubleEliminationSizes = [2, 4, 8, 16]
 const tournamentFormats = ['Single Elimination', 'Double Elimination'] as const
 type TournamentFormat = (typeof tournamentFormats)[number]
 
@@ -293,10 +293,7 @@ function generateDoubleEliminationMatches(tournamentId: number) {
     .prepare('SELECT * FROM participants WHERE tournament_id = ? ORDER BY seed')
     .all(tournamentId) as ParticipantRow[]
   const size = participants.length
-
-  if (!supportedDoubleEliminationSizes.includes(size)) {
-    throw new Error('Double elimination requires 2, 4, 8, or 16 participants.')
-  }
+  const bracketSize = nextPowerOfTwo(size)
 
   const insertMatch = db.prepare(`
     INSERT INTO matches
@@ -311,10 +308,7 @@ function generateDoubleEliminationMatches(tournamentId: number) {
   )
 
   const winnersRounds: number[][] = []
-  let entrants: BracketEntrant[] = participants.map((participant) => ({
-    type: 'participant',
-    id: participant.id,
-  }))
+  let entrants = createDoubleEliminationEntrants(participants, bracketSize)
   let round = 1
 
   while (entrants.length > 1) {
@@ -324,8 +318,8 @@ function generateDoubleEliminationMatches(tournamentId: number) {
     for (let index = 0; index < entrants.length; index += 2) {
       const player1 = entrants[index]
       const player2 = entrants[index + 1]
-      const player1Id = player1.type === 'participant' ? player1.id : null
-      const player2Id = player2.type === 'participant' ? player2.id : null
+      const player1Id = entrantParticipantId(player1)
+      const player2Id = entrantParticipantId(player2)
       const matchId = Number(
         insertMatch.run(tournamentId, 'winners', round, index / 2 + 1, player1Id, player2Id, 0)
           .lastInsertRowid,
@@ -346,9 +340,9 @@ function generateDoubleEliminationMatches(tournamentId: number) {
   const winnersFinalId = winnersRounds[winnersRounds.length - 1]?.[0]
   const losersRounds: number[][] = []
 
-  if (size > 2) {
+  if (bracketSize > 2) {
     for (let losersRound = 1; losersRound <= winnersRounds.length * 2 - 2; losersRound += 1) {
-      const matchCount = size / 2 ** (Math.floor((losersRound + 1) / 2) + 1)
+      const matchCount = bracketSize / 2 ** (Math.floor((losersRound + 1) / 2) + 1)
       const roundMatches: number[] = []
 
       for (let position = 1; position <= matchCount; position += 1) {
@@ -398,7 +392,7 @@ function generateDoubleEliminationMatches(tournamentId: number) {
 
   if (winnersFinalId) {
     updateWinnerProgression.run(grandFinalId, 1, winnersFinalId)
-    if (size === 2) {
+    if (bracketSize === 2) {
       updateLoserProgression.run(grandFinalId, 2, winnersFinalId)
     } else {
       updateLoserProgression.run(losersRounds[losersRounds.length - 1][0], 2, winnersFinalId)
@@ -406,7 +400,34 @@ function generateDoubleEliminationMatches(tournamentId: number) {
     }
   }
 
+  autoAdvanceByes(tournamentId)
   updateTournamentStatus(tournamentId)
+}
+
+function nextPowerOfTwo(value: number) {
+  return 2 ** Math.ceil(Math.log2(value))
+}
+
+function createDoubleEliminationEntrants(participants: ParticipantRow[], bracketSize: number) {
+  const entrants: BracketEntrant[] = []
+  const byes = bracketSize - participants.length
+  let participantIndex = 0
+
+  for (let byeIndex = 0; byeIndex < byes; byeIndex += 1) {
+    entrants.push({ type: 'participant', id: participants[participantIndex].id }, { type: 'bye' })
+    participantIndex += 1
+  }
+
+  while (participantIndex < participants.length) {
+    entrants.push({ type: 'participant', id: participants[participantIndex].id })
+    participantIndex += 1
+  }
+
+  return entrants
+}
+
+function entrantParticipantId(entrant: BracketEntrant) {
+  return entrant.type === 'participant' ? entrant.id : null
 }
 
 function assertBracketShape(tournamentId: number, participantCount: number) {
@@ -468,21 +489,17 @@ function addParticipant(tournamentId: number, name: string) {
     if (count.count >= maxBracketSize) return false
 
     const nextCount = count.count + 1
-    if (
-      tournament.registration_status !== 'open' &&
-      tournament.format === 'Double Elimination' &&
-      !supportedDoubleEliminationSizes.includes(nextCount)
-    ) {
-      return false
-    }
-
     if (tournament.registration_status !== 'open') {
       const completedOrScoredMatches = db
         .prepare(
           `SELECT COUNT(*) as count
            FROM matches
            WHERE tournament_id = ?
-             AND (winner_id IS NOT NULL OR player1_score IS NOT NULL OR player2_score IS NOT NULL)`,
+             AND (
+              player1_score IS NOT NULL
+              OR player2_score IS NOT NULL
+              OR (winner_id IS NOT NULL AND player1_id IS NOT NULL AND player2_id IS NOT NULL)
+             )`,
         )
         .get(tournamentId) as { count: number }
       if (completedOrScoredMatches.count > 0) return false
@@ -546,10 +563,6 @@ function startTournament(tournamentId: number) {
       .prepare('SELECT COUNT(*) as count FROM participants WHERE tournament_id = ?')
       .get(tournamentId) as { count: number }
     if (count.count < 2) return false
-    if (tournament.format === 'Double Elimination' && !supportedDoubleEliminationSizes.includes(count.count)) {
-      return false
-    }
-
     db.prepare(
       "UPDATE tournaments SET status = 'In Progress', registration_status = 'started', bracket_size = ?, completed_at = NULL WHERE id = ?",
     ).run(count.count, tournamentId)
@@ -572,10 +585,6 @@ function resetTournament(tournamentId: number) {
       .prepare('SELECT COUNT(*) as count FROM participants WHERE tournament_id = ?')
       .get(tournamentId) as { count: number }
     if (count.count < 2) return false
-    if (tournament.format === 'Double Elimination' && !supportedDoubleEliminationSizes.includes(count.count)) {
-      return false
-    }
-
     db.prepare('UPDATE tournaments SET status = ?, bracket_size = ?, completed_at = NULL WHERE id = ?').run(
       'In Progress',
       count.count,
@@ -707,6 +716,80 @@ function loserFor(match: MatchRow, winnerId: number | null) {
   return null
 }
 
+function autoAdvanceByes(tournamentId: number) {
+  let advanced = true
+
+  while (advanced) {
+    advanced = false
+    const matches = db
+      .prepare('SELECT * FROM matches WHERE tournament_id = ? AND winner_id IS NULL ORDER BY bracket_group, round, position')
+      .all(tournamentId) as MatchRow[]
+
+    for (const match of matches) {
+      const hasOnlyPlayer1 = Boolean(match.player1_id && !match.player2_id)
+      const hasOnlyPlayer2 = Boolean(match.player2_id && !match.player1_id)
+      if (!hasOnlyPlayer1 && !hasOnlyPlayer2) continue
+
+      const missingSlot: 1 | 2 = hasOnlyPlayer1 ? 2 : 1
+      if (slotCanStillReceiveEntrant(match.id, missingSlot, new Set())) continue
+
+      const winnerId = hasOnlyPlayer1 ? match.player1_id : match.player2_id
+      if (!winnerId) continue
+
+      db.prepare('UPDATE matches SET winner_id = ?, player1_score = NULL, player2_score = NULL WHERE id = ?').run(
+        winnerId,
+        match.id,
+      )
+
+      if (match.next_match_id && match.next_slot) {
+        const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
+        db.prepare(`UPDATE matches SET ${slotColumn} = ? WHERE id = ?`).run(winnerId, match.next_match_id)
+      }
+
+      advanced = true
+    }
+  }
+}
+
+function slotCanStillReceiveEntrant(matchId: number, slot: 1 | 2, visited: Set<string>): boolean {
+  const key = `${matchId}:${slot}`
+  if (visited.has(key)) return false
+  visited.add(key)
+
+  const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId) as MatchRow | undefined
+  if (!match) return false
+
+  if ((slot === 1 && match.player1_id) || (slot === 2 && match.player2_id)) return true
+
+  const winnerSources = db
+    .prepare('SELECT * FROM matches WHERE next_match_id = ? AND next_slot = ?')
+    .all(matchId, slot) as MatchRow[]
+  if (winnerSources.some((source) => matchCanProduceWinner(source, visited))) return true
+
+  const loserSources = db
+    .prepare('SELECT * FROM matches WHERE loser_next_match_id = ? AND loser_next_slot = ?')
+    .all(matchId, slot) as MatchRow[]
+  return loserSources.some((source) => matchCanProduceLoser(source, visited))
+}
+
+function matchCanProduceWinner(match: MatchRow, visited: Set<string>): boolean {
+  if (match.winner_id) return true
+  return (
+    Boolean(match.player1_id) ||
+    slotCanStillReceiveEntrant(match.id, 1, visited) ||
+    Boolean(match.player2_id) ||
+    slotCanStillReceiveEntrant(match.id, 2, visited)
+  )
+}
+
+function matchCanProduceLoser(match: MatchRow, visited: Set<string>): boolean {
+  if (loserFor(match, match.winner_id)) return true
+
+  const player1CanExist: boolean = Boolean(match.player1_id) || slotCanStillReceiveEntrant(match.id, 1, visited)
+  const player2CanExist: boolean = Boolean(match.player2_id) || slotCanStillReceiveEntrant(match.id, 2, visited)
+  return player1CanExist && player2CanExist
+}
+
 function saveMatch(
   matchId: number,
   player1Score: number | null,
@@ -807,6 +890,7 @@ function saveMatch(
       }
     }
 
+    autoAdvanceByes(match.tournament_id)
     updateTournamentStatus(match.tournament_id)
 
     return match.tournament_id
@@ -927,7 +1011,7 @@ app.post('/api/tournaments/:id/participants', (request, response) => {
   if (!addParticipant(id, parsed.data.name)) {
     response.status(400).json({
       error:
-        'Could not add participant. Reset the bracket before adding after scores, and use 2, 4, 8, or 16 players for double elimination.',
+        'Could not add participant. Reset the bracket before adding after scores, and keep the bracket at 16 players or fewer.',
     })
     return
   }

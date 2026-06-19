@@ -160,7 +160,7 @@ function CreateBracketPage() {
                 </select>
               </label>
               <p className="text-sm leading-6 text-slate-500">
-                Double elimination starts with exactly 2, 4, 8, or 16 participants and includes a reset final when needed.
+                Double elimination supports 2-16 participants, adds byes as needed, and includes a reset final when needed.
               </p>
               <Button className="w-full" onClick={createTournament} disabled={creating || !newName.trim()}>
                 <Plus className="h-4 w-4" /> {creating ? 'Creating...' : 'Create join link'}
@@ -331,7 +331,7 @@ function AdminPage() {
 
     const response = await fetch(`/api/tournaments/${bracket.tournament.id}/start`, { method: 'POST' })
     if (!response.ok) {
-      setError('Single elimination needs at least two participants. Double elimination needs exactly 2, 4, 8, or 16.')
+      setError('A bracket needs at least two participants before it can start.')
       return
     }
 
@@ -586,8 +586,8 @@ function AdminPage() {
                     </select>
                   </label>
                   <p className="text-sm leading-6 text-slate-500">
-                    Double elimination requires exactly 2, 4, 8, or 16 participants and uses a
-                    reset final if the losers bracket winner wins the first grand final.
+                    Double elimination supports 2-16 participants, adds byes as needed, and uses
+                    a reset final if the losers bracket winner wins the first grand final.
                   </p>
                   <Button className="w-full" onClick={createTournament}>
                     <Plus className="h-4 w-4" /> Create join link
