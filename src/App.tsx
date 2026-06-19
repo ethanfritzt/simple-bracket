@@ -11,7 +11,7 @@ import { cn } from './lib/utils'
 type Tournament = {
   id: number
   name: string
-  format: string
+  format: TournamentFormat
   status: string
   bracket_size: number
   created_at: string
@@ -31,6 +31,7 @@ type Participant = {
 type Match = {
   id: number
   tournament_id: number
+  bracket_group: 'single' | 'winners' | 'losers' | 'grand_final'
   round: number
   position: number
   player1_id: number | null
@@ -40,6 +41,9 @@ type Match = {
   winner_id: number | null
   next_match_id: number | null
   next_slot: 1 | 2 | null
+  loser_next_match_id: number | null
+  loser_next_slot: 1 | 2 | null
+  is_reset_final: 0 | 1
   status: 'pending' | 'ready' | 'completed'
 }
 
@@ -50,6 +54,8 @@ type BracketState = {
 }
 
 const maxRegistrationSpots = 16
+type TournamentFormat = 'Single Elimination' | 'Double Elimination'
+const tournamentFormats: TournamentFormat[] = ['Single Elimination', 'Double Elimination']
 
 function App() {
   return (
@@ -66,6 +72,7 @@ function App() {
 function CreateBracketPage() {
   const navigate = useNavigate()
   const [newName, setNewName] = useState('Weekend Bracket')
+  const [newFormat, setNewFormat] = useState<TournamentFormat>('Single Elimination')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -76,6 +83,7 @@ function CreateBracketPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newName,
+        format: newFormat,
       }),
     })
     setCreating(false)
@@ -105,7 +113,7 @@ function CreateBracketPage() {
         <header className="grid gap-6 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_24rem] lg:p-8">
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-orange-500">Single Elimination</Badge>
+              <Badge className="bg-orange-500">{newFormat}</Badge>
               <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
                 <Database className="h-3.5 w-3.5" /> SQLite persisted
               </span>
@@ -139,8 +147,20 @@ function CreateBracketPage() {
                 Bracket name
                 <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
               </label>
+              <label className="space-y-1 text-sm font-medium text-slate-700">
+                Format
+                <select
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
+                  value={newFormat}
+                  onChange={(event) => setNewFormat(event.currentTarget.value as TournamentFormat)}
+                >
+                  {tournamentFormats.map((format) => (
+                    <option key={format} value={format}>{format}</option>
+                  ))}
+                </select>
+              </label>
               <p className="text-sm leading-6 text-slate-500">
-                Round 1 pairs everyone possible when you start, with the last seed receiving the bye for odd participant counts.
+                Double elimination starts with exactly 2, 4, 8, or 16 participants and includes a reset final when needed.
               </p>
               <Button className="w-full" onClick={createTournament} disabled={creating || !newName.trim()}>
                 <Plus className="h-4 w-4" /> {creating ? 'Creating...' : 'Create join link'}
@@ -238,6 +258,7 @@ function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [savingMatchId, setSavingMatchId] = useState<number | null>(null)
   const [newName, setNewName] = useState('Weekend Bracket')
+  const [newFormat, setNewFormat] = useState<TournamentFormat>('Single Elimination')
   const [newParticipantName, setNewParticipantName] = useState('')
   const [allowCompletedEdits, setAllowCompletedEdits] = useState(false)
   const routeTournamentId = params.id ? Number(params.id) : null
@@ -288,6 +309,7 @@ function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newName,
+        format: newFormat,
       }),
     })
 
@@ -309,7 +331,7 @@ function AdminPage() {
 
     const response = await fetch(`/api/tournaments/${bracket.tournament.id}/start`, { method: 'POST' })
     if (!response.ok) {
-      setError('A bracket needs at least two participants before it can start.')
+      setError('Single elimination needs at least two participants. Double elimination needs exactly 2, 4, 8, or 16.')
       return
     }
 
@@ -341,7 +363,8 @@ function AdminPage() {
     })
 
     if (!response.ok) {
-      setError('Could not add that participant. Registration may be closed or full.')
+      const body = (await response.json().catch(() => null)) as { error?: string } | null
+      setError(body?.error ?? 'Could not add that participant. The bracket may be full or already scored.')
       return
     }
 
@@ -438,9 +461,7 @@ function AdminPage() {
   }
 
   const maxRound = bracket?.matches.reduce((max, match) => Math.max(max, match.round), 0) ?? 0
-  const champion = participantFor(
-    bracket?.matches.find((match) => match.round === maxRound)?.winner_id ?? null,
-  )
+  const champion = participantFor(bracket ? championIdFor(bracket) : null)
   const rounds = Array.from({ length: maxRound }, (_, index) => index + 1).map((round) => ({
     round,
     matches: bracket?.matches.filter((match) => match.round === round) ?? [],
@@ -457,7 +478,7 @@ function AdminPage() {
         <header className="grid gap-5 rounded-3xl border border-white/70 bg-white/75 p-5 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_22rem] lg:p-8">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-orange-500">Single Elimination</Badge>
+              <Badge className="bg-orange-500">{bracket?.tournament.format ?? newFormat}</Badge>
               <Badge className={registrationOpen ? 'bg-sky-600' : isCompleted ? 'bg-emerald-600' : 'bg-slate-900'}>
                 {bracket?.tournament.status ?? 'Loading'}
               </Badge>
@@ -552,9 +573,21 @@ function AdminPage() {
                     Tournament name
                     <Input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} />
                   </label>
+                  <label className="space-y-1 text-sm font-medium text-slate-700">
+                    Format
+                    <select
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
+                      value={newFormat}
+                      onChange={(event) => setNewFormat(event.currentTarget.value as TournamentFormat)}
+                    >
+                      {tournamentFormats.map((format) => (
+                        <option key={format} value={format}>{format}</option>
+                      ))}
+                    </select>
+                  </label>
                   <p className="text-sm leading-6 text-slate-500">
-                    Round 1 pairs everyone possible when you start, with the last seed receiving
-                    the bye for odd participant counts.
+                    Double elimination requires exactly 2, 4, 8, or 16 participants and uses a
+                    reset final if the losers bracket winner wins the first grand final.
                   </p>
                   <Button className="w-full" onClick={createTournament}>
                     <Plus className="h-4 w-4" /> Create join link
@@ -593,7 +626,7 @@ function AdminPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {registrationOpen ? (
+                  {bracket.tournament.registration_status !== 'locked' ? (
                     <form className="flex gap-2" onSubmit={addParticipant}>
                       <Input
                         value={newParticipantName}
@@ -637,6 +670,11 @@ function AdminPage() {
                     <Button className="w-full" onClick={startBracket} disabled={bracket.participants.length < 2}>
                       Start bracket
                     </Button>
+                  ) : null}
+                  {!registrationOpen ? (
+                    <p className="text-xs leading-5 text-slate-500">
+                      Hosts can add a late participant before any scores are saved. The bracket is rebuilt after the add.
+                    </p>
                   ) : null}
                 </CardContent>
               </Card>
@@ -687,6 +725,16 @@ function AdminPage() {
                   </div>
                 </CardContent>
               </Card>
+            ) : bracket?.tournament.format === 'Double Elimination' ? (
+              <DoubleEliminationAdminBracket
+                bracket={bracket}
+                savingMatchId={savingMatchId}
+                editingLocked={editingLocked}
+                participantFor={participantFor}
+                onPatch={patchMatch}
+                onSave={updateMatch}
+                onUpdateParticipant={updateParticipant}
+              />
             ) : bracket ? (
               <div
                 className="grid gap-8"
@@ -782,6 +830,138 @@ function AdminPage() {
   )
 }
 
+type DoubleEliminationAdminBracketProps = {
+  bracket: BracketState
+  savingMatchId: number | null
+  editingLocked: boolean
+  participantFor: (id: number | null) => Participant | null
+  onPatch: (matchId: number, patch: Partial<Match>) => void
+  onSave: (match: Match, winnerId?: number | null) => void
+  onUpdateParticipant: (id: number, name: string) => void
+}
+
+function DoubleEliminationAdminBracket({
+  bracket,
+  savingMatchId,
+  editingLocked,
+  participantFor,
+  onPatch,
+  onSave,
+  onUpdateParticipant,
+}: DoubleEliminationAdminBracketProps) {
+  const grandFinals = bracket.matches.filter((match) => match.bracket_group === 'grand_final')
+  const resetFinal = grandFinals.find((match) => match.is_reset_final === 1)
+  const showResetFinal = Boolean(resetFinal?.player1_id || resetFinal?.player2_id || resetFinal?.winner_id)
+
+  return (
+    <div className="min-w-[64rem] space-y-8">
+      <EditableBracketSection
+        title="Winners Bracket"
+        matches={bracket.matches.filter((match) => match.bracket_group === 'winners')}
+        savingMatchId={savingMatchId}
+        editingLocked={editingLocked}
+        participantFor={participantFor}
+        onPatch={onPatch}
+        onSave={onSave}
+        onUpdateParticipant={onUpdateParticipant}
+      />
+      <EditableBracketSection
+        title="Losers Bracket"
+        matches={bracket.matches.filter((match) => match.bracket_group === 'losers')}
+        savingMatchId={savingMatchId}
+        editingLocked={editingLocked}
+        participantFor={participantFor}
+        onPatch={onPatch}
+        onSave={onSave}
+        onUpdateParticipant={onUpdateParticipant}
+      />
+      <EditableBracketSection
+        title="Grand Final"
+        matches={grandFinals.filter((match) => match.is_reset_final === 0)}
+        savingMatchId={savingMatchId}
+        editingLocked={editingLocked}
+        participantFor={participantFor}
+        onPatch={onPatch}
+        onSave={onSave}
+        onUpdateParticipant={onUpdateParticipant}
+      />
+      {showResetFinal ? (
+        <EditableBracketSection
+          title="Bracket Reset Final"
+          matches={grandFinals.filter((match) => match.is_reset_final === 1)}
+          savingMatchId={savingMatchId}
+          editingLocked={editingLocked}
+          participantFor={participantFor}
+          onPatch={onPatch}
+          onSave={onSave}
+          onUpdateParticipant={onUpdateParticipant}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+type EditableBracketSectionProps = {
+  title: string
+  matches: Match[]
+  savingMatchId: number | null
+  editingLocked: boolean
+  participantFor: (id: number | null) => Participant | null
+  onPatch: (matchId: number, patch: Partial<Match>) => void
+  onSave: (match: Match, winnerId?: number | null) => void
+  onUpdateParticipant: (id: number, name: string) => void
+}
+
+function EditableBracketSection({
+  title,
+  matches,
+  savingMatchId,
+  editingLocked,
+  participantFor,
+  onPatch,
+  onSave,
+  onUpdateParticipant,
+}: EditableBracketSectionProps) {
+  const rounds = roundsFor(matches)
+
+  if (matches.length === 0) return null
+
+  return (
+    <section className="space-y-4">
+      <h2 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black uppercase tracking-[0.2em] text-slate-700 shadow-sm">
+        {title}
+      </h2>
+      <div
+        className="grid gap-6"
+        style={{
+          gridTemplateColumns: `repeat(${rounds.length}, 17rem)`,
+        }}
+      >
+        {rounds.map(({ round, matches: roundMatches }) => (
+          <div key={round} className="space-y-4">
+            <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-400">
+              Round {round}
+            </div>
+            {roundMatches.map((match) => (
+              <MatchCard
+                key={match.id}
+                match={match}
+                player1={participantFor(match.player1_id)}
+                player2={participantFor(match.player2_id)}
+                saving={savingMatchId === match.id}
+                editingLocked={editingLocked}
+                onPatch={onPatch}
+                onSave={onSave}
+                onUpdateParticipant={onUpdateParticipant}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 type TournamentListProps = {
   tournaments: Tournament[]
   selectedId?: number
@@ -808,7 +988,7 @@ function TournamentList({ tournaments, selectedId }: TournamentListProps) {
             {tournament.registration_status === 'open'
               ? `${tournament.participant_count ?? 0} joined`
               : `${tournament.bracket_size} players`}{' '}
-            · {tournament.status}
+            · {tournament.format} · {tournament.status}
           </span>
         </Link>
       ))}
@@ -965,9 +1145,7 @@ function DisplayPage() {
   }
 
   const maxRound = bracket?.matches.reduce((max, match) => Math.max(max, match.round), 0) ?? 0
-  const champion = participantFor(
-    bracket?.matches.find((match) => match.round === maxRound)?.winner_id ?? null,
-  )
+  const champion = participantFor(bracket ? championIdFor(bracket) : null)
   const rounds = Array.from({ length: maxRound }, (_, index) => index + 1).map((round) => ({
     round,
     matches: bracket?.matches.filter((match) => match.round === round) ?? [],
@@ -1018,7 +1196,11 @@ function DisplayPage() {
           </Card>
         </header>
 
-        {bracket ? (
+        {bracket?.tournament.format === 'Double Elimination' ? (
+          <section className="min-w-0 overflow-x-auto pb-6">
+            <DoubleEliminationDisplayBracket bracket={bracket} participantFor={participantFor} />
+          </section>
+        ) : bracket ? (
           <section className="min-w-0 overflow-x-auto pb-6">
             <div
               className="grid gap-8"
@@ -1087,6 +1269,81 @@ function DisplayPage() {
         )}
       </section>
     </main>
+  )
+}
+
+type DoubleEliminationDisplayBracketProps = {
+  bracket: BracketState
+  participantFor: (id: number | null) => Participant | null
+}
+
+function DoubleEliminationDisplayBracket({ bracket, participantFor }: DoubleEliminationDisplayBracketProps) {
+  const grandFinals = bracket.matches.filter((match) => match.bracket_group === 'grand_final')
+  const resetFinal = grandFinals.find((match) => match.is_reset_final === 1)
+  const showResetFinal = Boolean(resetFinal?.player1_id || resetFinal?.player2_id || resetFinal?.winner_id)
+
+  return (
+    <div className="min-w-[64rem] space-y-8">
+      <DisplayBracketSection
+        title="Winners Bracket"
+        matches={bracket.matches.filter((match) => match.bracket_group === 'winners')}
+        participantFor={participantFor}
+      />
+      <DisplayBracketSection
+        title="Losers Bracket"
+        matches={bracket.matches.filter((match) => match.bracket_group === 'losers')}
+        participantFor={participantFor}
+      />
+      <DisplayBracketSection
+        title="Grand Final"
+        matches={grandFinals.filter((match) => match.is_reset_final === 0)}
+        participantFor={participantFor}
+      />
+      {showResetFinal ? (
+        <DisplayBracketSection
+          title="Bracket Reset Final"
+          matches={grandFinals.filter((match) => match.is_reset_final === 1)}
+          participantFor={participantFor}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+type DisplayBracketSectionProps = {
+  title: string
+  matches: Match[]
+  participantFor: (id: number | null) => Participant | null
+}
+
+function DisplayBracketSection({ title, matches, participantFor }: DisplayBracketSectionProps) {
+  const rounds = roundsFor(matches)
+
+  if (matches.length === 0) return null
+
+  return (
+    <section className="space-y-4">
+      <h2 className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black uppercase tracking-[0.22em] text-slate-200">
+        {title}
+      </h2>
+      <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${rounds.length}, 18rem)` }}>
+        {rounds.map(({ round, matches: roundMatches }) => (
+          <div key={round} className="space-y-4">
+            <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-slate-400">
+              Round {round}
+            </div>
+            {roundMatches.map((match) => (
+              <DisplayMatchCard
+                key={match.id}
+                match={match}
+                player1={participantFor(match.player1_id)}
+                player2={participantFor(match.player2_id)}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1344,6 +1601,35 @@ function roundName(round: number, maxRound: number) {
   if (round === maxRound - 1) return 'Semifinals'
   if (round === maxRound - 2) return 'Quarterfinals'
   return `Round ${round}`
+}
+
+function roundsFor(matches: Match[]) {
+  const maxRound = matches.reduce((max, match) => Math.max(max, match.round), 0)
+  return Array.from({ length: maxRound }, (_, index) => index + 1).map((round) => ({
+    round,
+    matches: matches.filter((match) => match.round === round),
+  }))
+}
+
+function championIdFor(bracket: BracketState) {
+  if (bracket.tournament.format === 'Double Elimination') {
+    const resetFinal = bracket.matches.find(
+      (match) => match.bracket_group === 'grand_final' && match.is_reset_final === 1,
+    )
+    if (resetFinal?.winner_id) return resetFinal.winner_id
+
+    const grandFinal = bracket.matches.find(
+      (match) => match.bracket_group === 'grand_final' && match.is_reset_final === 0,
+    )
+    if (grandFinal?.winner_id && grandFinal.player1_id && grandFinal.winner_id === grandFinal.player1_id) {
+      return grandFinal.winner_id
+    }
+
+    return null
+  }
+
+  const maxRound = bracket.matches.reduce((max, match) => Math.max(max, match.round), 0)
+  return bracket.matches.find((match) => match.bracket_group === 'single' && match.round === maxRound)?.winner_id ?? null
 }
 
 function scorePatch(match: Match, slot: 'player1_score' | 'player2_score', rawValue: string) {

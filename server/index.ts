@@ -20,6 +20,7 @@ db.pragma('foreign_keys = ON')
 type MatchRow = {
   id: number
   tournament_id: number
+  bracket_group: 'single' | 'winners' | 'losers' | 'grand_final'
   round: number
   position: number
   player1_id: number | null
@@ -29,6 +30,9 @@ type MatchRow = {
   winner_id: number | null
   next_match_id: number | null
   next_slot: 1 | 2 | null
+  loser_next_match_id: number | null
+  loser_next_slot: 1 | 2 | null
+  is_reset_final: 0 | 1
 }
 
 type ParticipantRow = {
@@ -43,6 +47,9 @@ type BracketEntrant =
   | { type: 'match'; matchId: number }
 
 const maxBracketSize = 16
+const supportedDoubleEliminationSizes = [2, 4, 8, 16]
+const tournamentFormats = ['Single Elimination', 'Double Elimination'] as const
+type TournamentFormat = (typeof tournamentFormats)[number]
 
 const participantSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -56,6 +63,7 @@ const matchSchema = z.object({
 
 const createTournamentSchema = z.object({
   name: z.string().trim().min(1).max(100),
+  format: z.enum(tournamentFormats).default('Single Elimination'),
 })
 
 const joinSchema = z.object({
@@ -82,6 +90,7 @@ function migrate() {
     CREATE TABLE IF NOT EXISTS matches (
       id INTEGER PRIMARY KEY,
       tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      bracket_group TEXT NOT NULL DEFAULT 'single',
       round INTEGER NOT NULL,
       position INTEGER NOT NULL,
       player1_id INTEGER REFERENCES participants(id),
@@ -90,7 +99,10 @@ function migrate() {
       player2_score INTEGER,
       winner_id INTEGER REFERENCES participants(id),
       next_match_id INTEGER REFERENCES matches(id),
-      next_slot INTEGER CHECK(next_slot IN (1, 2))
+      next_slot INTEGER CHECK(next_slot IN (1, 2)),
+      loser_next_match_id INTEGER REFERENCES matches(id),
+      loser_next_slot INTEGER CHECK(loser_next_slot IN (1, 2)),
+      is_reset_final INTEGER NOT NULL DEFAULT 0
     );
   `)
 
@@ -106,6 +118,20 @@ function migrate() {
   }
   if (!columns.some((column) => column.name === 'registration_status')) {
     db.exec("ALTER TABLE tournaments ADD COLUMN registration_status TEXT NOT NULL DEFAULT 'started'")
+  }
+
+  const matchColumns = db.prepare('PRAGMA table_info(matches)').all() as { name: string }[]
+  if (!matchColumns.some((column) => column.name === 'bracket_group')) {
+    db.exec("ALTER TABLE matches ADD COLUMN bracket_group TEXT NOT NULL DEFAULT 'single'")
+  }
+  if (!matchColumns.some((column) => column.name === 'loser_next_match_id')) {
+    db.exec('ALTER TABLE matches ADD COLUMN loser_next_match_id INTEGER REFERENCES matches(id)')
+  }
+  if (!matchColumns.some((column) => column.name === 'loser_next_slot')) {
+    db.exec('ALTER TABLE matches ADD COLUMN loser_next_slot INTEGER CHECK(loser_next_slot IN (1, 2))')
+  }
+  if (!matchColumns.some((column) => column.name === 'is_reset_final')) {
+    db.exec('ALTER TABLE matches ADD COLUMN is_reset_final INTEGER NOT NULL DEFAULT 0')
   }
 
   const tournamentsWithoutJoinCodes = db
@@ -124,7 +150,20 @@ function getState(tournamentId: number) {
     .prepare('SELECT * FROM participants WHERE tournament_id = ? ORDER BY seed')
     .all(tournamentId)
   const matches = db
-    .prepare('SELECT * FROM matches WHERE tournament_id = ? ORDER BY round, position')
+    .prepare(
+      `SELECT * FROM matches
+       WHERE tournament_id = ?
+       ORDER BY
+        CASE bracket_group
+          WHEN 'single' THEN 0
+          WHEN 'winners' THEN 1
+          WHEN 'losers' THEN 2
+          WHEN 'grand_final' THEN 3
+          ELSE 4
+        END,
+        round,
+        position`,
+    )
     .all(tournamentId) as MatchRow[]
 
   return {
@@ -141,7 +180,7 @@ function createJoinCode() {
   return randomBytes(4).toString('hex')
 }
 
-function createTournament(name: string, rawParticipants: string[] = []) {
+function createTournament(name: string, format: TournamentFormat, rawParticipants: string[] = []) {
   const create = db.transaction(() => {
     const bracketSize = rawParticipants.length > 0 ? rawParticipants.length : maxBracketSize
     const tournamentId = Number(
@@ -151,7 +190,7 @@ function createTournament(name: string, rawParticipants: string[] = []) {
         )
         .run(
           name,
-          'Single Elimination',
+          format,
           rawParticipants.length > 0 ? 'In Progress' : 'Registration',
           bracketSize,
           createJoinCode(),
@@ -175,6 +214,19 @@ function createTournament(name: string, rawParticipants: string[] = []) {
 }
 
 function generateMatches(tournamentId: number) {
+  const tournament = db
+    .prepare('SELECT format FROM tournaments WHERE id = ?')
+    .get(tournamentId) as { format: TournamentFormat } | undefined
+
+  if (tournament?.format === 'Double Elimination') {
+    generateDoubleEliminationMatches(tournamentId)
+    return
+  }
+
+  generateSingleEliminationMatches(tournamentId)
+}
+
+function generateSingleEliminationMatches(tournamentId: number) {
   db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId)
 
   const participants = db
@@ -188,8 +240,8 @@ function generateMatches(tournamentId: number) {
 
   const insertMatch = db.prepare(`
     INSERT INTO matches
-      (tournament_id, round, position, player1_id, player2_id, player1_score, player2_score, winner_id, next_match_id, next_slot)
-    VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL)
+      (tournament_id, bracket_group, round, position, player1_id, player2_id, player1_score, player2_score, winner_id, next_match_id, next_slot)
+    VALUES (?, 'single', ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL)
   `)
   const updateProgression = db.prepare(
     'UPDATE matches SET next_match_id = ?, next_slot = ? WHERE id = ?',
@@ -231,6 +283,129 @@ function generateMatches(tournamentId: number) {
   }
 
   assertBracketShape(tournamentId, participants.length)
+  updateTournamentStatus(tournamentId)
+}
+
+function generateDoubleEliminationMatches(tournamentId: number) {
+  db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId)
+
+  const participants = db
+    .prepare('SELECT * FROM participants WHERE tournament_id = ? ORDER BY seed')
+    .all(tournamentId) as ParticipantRow[]
+  const size = participants.length
+
+  if (!supportedDoubleEliminationSizes.includes(size)) {
+    throw new Error('Double elimination requires 2, 4, 8, or 16 participants.')
+  }
+
+  const insertMatch = db.prepare(`
+    INSERT INTO matches
+      (tournament_id, bracket_group, round, position, player1_id, player2_id, player1_score, player2_score, winner_id, next_match_id, next_slot, loser_next_match_id, loser_next_slot, is_reset_final)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+  `)
+  const updateWinnerProgression = db.prepare(
+    'UPDATE matches SET next_match_id = ?, next_slot = ? WHERE id = ?',
+  )
+  const updateLoserProgression = db.prepare(
+    'UPDATE matches SET loser_next_match_id = ?, loser_next_slot = ? WHERE id = ?',
+  )
+
+  const winnersRounds: number[][] = []
+  let entrants: BracketEntrant[] = participants.map((participant) => ({
+    type: 'participant',
+    id: participant.id,
+  }))
+  let round = 1
+
+  while (entrants.length > 1) {
+    const roundMatches: number[] = []
+    const nextEntrants: BracketEntrant[] = []
+
+    for (let index = 0; index < entrants.length; index += 2) {
+      const player1 = entrants[index]
+      const player2 = entrants[index + 1]
+      const player1Id = player1.type === 'participant' ? player1.id : null
+      const player2Id = player2.type === 'participant' ? player2.id : null
+      const matchId = Number(
+        insertMatch.run(tournamentId, 'winners', round, index / 2 + 1, player1Id, player2Id, 0)
+          .lastInsertRowid,
+      )
+
+      if (player1.type === 'match') updateWinnerProgression.run(matchId, 1, player1.matchId)
+      if (player2.type === 'match') updateWinnerProgression.run(matchId, 2, player2.matchId)
+
+      roundMatches.push(matchId)
+      nextEntrants.push({ type: 'match', matchId })
+    }
+
+    winnersRounds.push(roundMatches)
+    entrants = nextEntrants
+    round += 1
+  }
+
+  const winnersFinalId = winnersRounds[winnersRounds.length - 1]?.[0]
+  const losersRounds: number[][] = []
+
+  if (size > 2) {
+    for (let losersRound = 1; losersRound <= winnersRounds.length * 2 - 2; losersRound += 1) {
+      const matchCount = size / 2 ** (Math.floor((losersRound + 1) / 2) + 1)
+      const roundMatches: number[] = []
+
+      for (let position = 1; position <= matchCount; position += 1) {
+        const matchId = Number(
+          insertMatch.run(tournamentId, 'losers', losersRound, position, null, null, 0).lastInsertRowid,
+        )
+        roundMatches.push(matchId)
+      }
+
+      losersRounds.push(roundMatches)
+    }
+
+    winnersRounds.forEach((roundMatches, roundIndex) => {
+      const winnersRound = roundIndex + 1
+      if (winnersRound === winnersRounds.length) return
+
+      const targetLosersRound = winnersRound === 1 ? 1 : winnersRound * 2 - 2
+      const targetMatches = losersRounds[targetLosersRound - 1]
+
+      roundMatches.forEach((matchId, index) => {
+        if (winnersRound === 1) {
+          updateLoserProgression.run(targetMatches[Math.floor(index / 2)], (index % 2) + 1, matchId)
+        } else {
+          updateLoserProgression.run(targetMatches[index], 2, matchId)
+        }
+      })
+    })
+
+    losersRounds.forEach((roundMatches, roundIndex) => {
+      const nextRoundMatches = losersRounds[roundIndex + 1]
+      if (!nextRoundMatches) return
+
+      roundMatches.forEach((matchId, index) => {
+        if ((roundIndex + 1) % 2 === 1) {
+          updateWinnerProgression.run(nextRoundMatches[index], 1, matchId)
+        } else {
+          updateWinnerProgression.run(nextRoundMatches[Math.floor(index / 2)], (index % 2) + 1, matchId)
+        }
+      })
+    })
+  }
+
+  const grandFinalId = Number(
+    insertMatch.run(tournamentId, 'grand_final', 1, 1, null, null, 0).lastInsertRowid,
+  )
+  insertMatch.run(tournamentId, 'grand_final', 2, 1, null, null, 1)
+
+  if (winnersFinalId) {
+    updateWinnerProgression.run(grandFinalId, 1, winnersFinalId)
+    if (size === 2) {
+      updateLoserProgression.run(grandFinalId, 2, winnersFinalId)
+    } else {
+      updateLoserProgression.run(losersRounds[losersRounds.length - 1][0], 2, winnersFinalId)
+      updateWinnerProgression.run(grandFinalId, 2, losersRounds[losersRounds.length - 1][0])
+    }
+  }
+
   updateTournamentStatus(tournamentId)
 }
 
@@ -283,20 +458,50 @@ function joinTournament(joinCode: string, name: string) {
 function addParticipant(tournamentId: number, name: string) {
   const add = db.transaction(() => {
     const tournament = db
-      .prepare('SELECT registration_status FROM tournaments WHERE id = ?')
-      .get(tournamentId) as { registration_status: string } | undefined
-    if (!tournament || tournament.registration_status !== 'open') return false
+      .prepare('SELECT registration_status, format FROM tournaments WHERE id = ?')
+      .get(tournamentId) as { registration_status: string; format: TournamentFormat } | undefined
+    if (!tournament) return false
 
     const count = db
       .prepare('SELECT COUNT(*) as count FROM participants WHERE tournament_id = ?')
       .get(tournamentId) as { count: number }
     if (count.count >= maxBracketSize) return false
 
+    const nextCount = count.count + 1
+    if (
+      tournament.registration_status !== 'open' &&
+      tournament.format === 'Double Elimination' &&
+      !supportedDoubleEliminationSizes.includes(nextCount)
+    ) {
+      return false
+    }
+
+    if (tournament.registration_status !== 'open') {
+      const completedOrScoredMatches = db
+        .prepare(
+          `SELECT COUNT(*) as count
+           FROM matches
+           WHERE tournament_id = ?
+             AND (winner_id IS NOT NULL OR player1_score IS NOT NULL OR player2_score IS NOT NULL)`,
+        )
+        .get(tournamentId) as { count: number }
+      if (completedOrScoredMatches.count > 0) return false
+    }
+
     db.prepare('INSERT INTO participants (tournament_id, seed, name) VALUES (?, ?, ?)').run(
       tournamentId,
-      count.count + 1,
+      nextCount,
       name,
     )
+
+    if (tournament.registration_status !== 'open') {
+      db.prepare('UPDATE tournaments SET bracket_size = ?, completed_at = NULL, status = ? WHERE id = ?').run(
+        nextCount,
+        'In Progress',
+        tournamentId,
+      )
+      generateMatches(tournamentId)
+    }
 
     return true
   })
@@ -333,14 +538,17 @@ function removeParticipant(participantId: number) {
 function startTournament(tournamentId: number) {
   const start = db.transaction(() => {
     const tournament = db
-      .prepare('SELECT registration_status FROM tournaments WHERE id = ?')
-      .get(tournamentId) as { registration_status: string } | undefined
+      .prepare('SELECT registration_status, format FROM tournaments WHERE id = ?')
+      .get(tournamentId) as { registration_status: string; format: TournamentFormat } | undefined
     if (!tournament || tournament.registration_status === 'started') return false
 
     const count = db
       .prepare('SELECT COUNT(*) as count FROM participants WHERE tournament_id = ?')
       .get(tournamentId) as { count: number }
     if (count.count < 2) return false
+    if (tournament.format === 'Double Elimination' && !supportedDoubleEliminationSizes.includes(count.count)) {
+      return false
+    }
 
     db.prepare(
       "UPDATE tournaments SET status = 'In Progress', registration_status = 'started', bracket_size = ?, completed_at = NULL WHERE id = ?",
@@ -356,14 +564,17 @@ function startTournament(tournamentId: number) {
 function resetTournament(tournamentId: number) {
   const reset = db.transaction(() => {
     const tournament = db
-      .prepare('SELECT id FROM tournaments WHERE id = ?')
-      .get(tournamentId) as { id: number } | undefined
+      .prepare('SELECT id, format FROM tournaments WHERE id = ?')
+      .get(tournamentId) as { id: number; format: TournamentFormat } | undefined
     if (!tournament) return false
 
     const count = db
       .prepare('SELECT COUNT(*) as count FROM participants WHERE tournament_id = ?')
       .get(tournamentId) as { count: number }
     if (count.count < 2) return false
+    if (tournament.format === 'Double Elimination' && !supportedDoubleEliminationSizes.includes(count.count)) {
+      return false
+    }
 
     db.prepare('UPDATE tournaments SET status = ?, bracket_size = ?, completed_at = NULL WHERE id = ?').run(
       'In Progress',
@@ -384,9 +595,42 @@ function deleteTournament(tournamentId: number) {
 }
 
 function updateTournamentStatus(tournamentId: number) {
+  const tournament = db
+    .prepare('SELECT format FROM tournaments WHERE id = ?')
+    .get(tournamentId) as { format: TournamentFormat } | undefined
+
+  if (tournament?.format === 'Double Elimination') {
+    const grandFinal = db
+      .prepare(
+        "SELECT * FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 0 LIMIT 1",
+      )
+      .get(tournamentId) as MatchRow | undefined
+    const resetFinal = db
+      .prepare(
+        "SELECT * FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 1 LIMIT 1",
+      )
+      .get(tournamentId) as MatchRow | undefined
+
+    const grandFinalWinnerFromWinnersBracket =
+      grandFinal?.winner_id && grandFinal.player1_id && grandFinal.winner_id === grandFinal.player1_id
+    const resetFinalWinner = resetFinal?.winner_id
+
+    if (grandFinalWinnerFromWinnersBracket || resetFinalWinner) {
+      db.prepare(
+        "UPDATE tournaments SET status = 'Completed', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP) WHERE id = ?",
+      ).run(tournamentId)
+      return
+    }
+
+    db.prepare("UPDATE tournaments SET status = 'In Progress', completed_at = NULL WHERE id = ?").run(
+      tournamentId,
+    )
+    return
+  }
+
   const final = db
     .prepare(
-      'SELECT winner_id FROM matches WHERE tournament_id = ? ORDER BY round DESC, position ASC LIMIT 1',
+      "SELECT winner_id FROM matches WHERE tournament_id = ? AND bracket_group = 'single' ORDER BY round DESC, position ASC LIMIT 1",
     )
     .get(tournamentId) as { winner_id: number | null } | undefined
 
@@ -405,7 +649,7 @@ function updateTournamentStatus(tournamentId: number) {
 function ensureSeeded() {
   const count = db.prepare('SELECT COUNT(*) as count FROM tournaments').get() as { count: number }
   if (count.count === 0) {
-    createTournament('Friday Night Bracket', [
+    createTournament('Friday Night Bracket', 'Single Elimination', [
       'Atlas',
       'Blitz',
       'Comet',
@@ -418,7 +662,10 @@ function ensureSeeded() {
   }
 }
 
-function clearMatchAndChildren(matchId: number) {
+function clearMatchAndChildren(matchId: number, visited = new Set<number>()) {
+  if (visited.has(matchId)) return
+  visited.add(matchId)
+
   const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId) as MatchRow | undefined
   if (!match) return
 
@@ -428,11 +675,36 @@ function clearMatchAndChildren(matchId: number) {
     WHERE id = ?
   `).run(matchId)
 
-  if (!match.next_match_id || !match.next_slot) return
+  if (match.next_match_id && match.next_slot) {
+    const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
+    db.prepare(`UPDATE matches SET ${slotColumn} = NULL WHERE id = ?`).run(match.next_match_id)
+    clearMatchAndChildren(match.next_match_id, visited)
+  }
 
-  const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
-  db.prepare(`UPDATE matches SET ${slotColumn} = NULL WHERE id = ?`).run(match.next_match_id)
-  clearMatchAndChildren(match.next_match_id)
+  if (match.loser_next_match_id && match.loser_next_slot) {
+    const slotColumn = match.loser_next_slot === 1 ? 'player1_id' : 'player2_id'
+    db.prepare(`UPDATE matches SET ${slotColumn} = NULL WHERE id = ?`).run(match.loser_next_match_id)
+    clearMatchAndChildren(match.loser_next_match_id, visited)
+  }
+
+  if (match.bracket_group === 'grand_final' && match.is_reset_final === 0) {
+    const resetFinal = db
+      .prepare(
+        "SELECT id FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 1",
+      )
+      .get(match.tournament_id) as { id: number } | undefined
+    if (resetFinal) {
+      db.prepare('UPDATE matches SET player1_id = NULL, player2_id = NULL WHERE id = ?').run(resetFinal.id)
+      clearMatchAndChildren(resetFinal.id, visited)
+    }
+  }
+}
+
+function loserFor(match: MatchRow, winnerId: number | null) {
+  if (!winnerId || !match.player1_id || !match.player2_id) return null
+  if (winnerId === match.player1_id) return match.player2_id
+  if (winnerId === match.player2_id) return match.player1_id
+  return null
 }
 
 function saveMatch(
@@ -461,10 +733,32 @@ function saveMatch(
       resolvedWinnerId === null || resolvedWinnerId === match.player1_id || resolvedWinnerId === match.player2_id
     if (!validWinner) return null
 
-    if (match.winner_id !== resolvedWinnerId && match.next_match_id && match.next_slot) {
-      const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
-      db.prepare(`UPDATE matches SET ${slotColumn} = NULL WHERE id = ?`).run(match.next_match_id)
-      clearMatchAndChildren(match.next_match_id)
+    if (match.winner_id !== resolvedWinnerId) {
+      if (match.next_match_id && match.next_slot) {
+        const slotColumn = match.next_slot === 1 ? 'player1_id' : 'player2_id'
+        db.prepare(`UPDATE matches SET ${slotColumn} = NULL WHERE id = ?`).run(match.next_match_id)
+        clearMatchAndChildren(match.next_match_id)
+      }
+
+      if (match.loser_next_match_id && match.loser_next_slot) {
+        const slotColumn = match.loser_next_slot === 1 ? 'player1_id' : 'player2_id'
+        db.prepare(`UPDATE matches SET ${slotColumn} = NULL WHERE id = ?`).run(match.loser_next_match_id)
+        clearMatchAndChildren(match.loser_next_match_id)
+      }
+
+      if (match.bracket_group === 'grand_final' && match.is_reset_final === 0) {
+        const resetFinal = db
+          .prepare(
+            "SELECT id FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 1",
+          )
+          .get(match.tournament_id) as { id: number } | undefined
+        if (resetFinal) {
+          db.prepare('UPDATE matches SET player1_id = NULL, player2_id = NULL WHERE id = ?').run(
+            resetFinal.id,
+          )
+          clearMatchAndChildren(resetFinal.id)
+        }
+      }
     }
 
     db.prepare(`
@@ -479,6 +773,38 @@ function saveMatch(
         resolvedWinnerId,
         match.next_match_id,
       )
+    }
+
+    const resolvedLoserId = loserFor(match, resolvedWinnerId)
+    if (resolvedLoserId && match.loser_next_match_id && match.loser_next_slot) {
+      const slotColumn = match.loser_next_slot === 1 ? 'player1_id' : 'player2_id'
+      db.prepare(`UPDATE matches SET ${slotColumn} = ? WHERE id = ?`).run(
+        resolvedLoserId,
+        match.loser_next_match_id,
+      )
+    }
+
+    if (match.bracket_group === 'grand_final' && match.is_reset_final === 0) {
+      const resetFinal = db
+        .prepare(
+          "SELECT id FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 1",
+        )
+        .get(match.tournament_id) as { id: number } | undefined
+
+      if (resetFinal) {
+        if (resolvedWinnerId && resolvedWinnerId === match.player2_id && match.player1_id && match.player2_id) {
+          db.prepare('UPDATE matches SET player1_id = ?, player2_id = ? WHERE id = ?').run(
+            match.player1_id,
+            match.player2_id,
+            resetFinal.id,
+          )
+        } else {
+          db.prepare('UPDATE matches SET player1_id = NULL, player2_id = NULL WHERE id = ?').run(
+            resetFinal.id,
+          )
+          clearMatchAndChildren(resetFinal.id)
+        }
+      }
     }
 
     updateTournamentStatus(match.tournament_id)
@@ -545,7 +871,7 @@ app.post('/api/tournaments', (request, response) => {
     return
   }
 
-  const tournamentId = createTournament(parsed.data.name)
+  const tournamentId = createTournament(parsed.data.name, parsed.data.format)
   response.status(201).json(getState(tournamentId))
 })
 
@@ -599,7 +925,10 @@ app.post('/api/tournaments/:id/participants', (request, response) => {
   }
 
   if (!addParticipant(id, parsed.data.name)) {
-    response.status(400).json({ error: 'Registration is closed or the bracket is full.' })
+    response.status(400).json({
+      error:
+        'Could not add participant. Reset the bracket before adding after scores, and use 2, 4, 8, or 16 players for double elimination.',
+    })
     return
   }
 
