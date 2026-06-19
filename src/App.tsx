@@ -1,5 +1,5 @@
-import { type FormEvent, useEffect, useState } from 'react'
-import { Copy, Crown, Database, Lock, Plus, RotateCcw, Save, Trash2, Trophy } from 'lucide-react'
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { Check, Copy, Crown, Database, Lock, Plus, RotateCcw, Save, Trash2, Trophy } from 'lucide-react'
 import { Link, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 
 import { Badge } from './components/ui/badge'
@@ -736,69 +736,26 @@ function AdminPage() {
                 onUpdateParticipant={updateParticipant}
               />
             ) : bracket ? (
-              <div
-                className="grid gap-8"
-                style={{
-                  gridTemplateColumns: `repeat(${rounds.length}, 17rem) 14rem`,
-                  minWidth: `${rounds.length * 304 + 224}px`,
+              <BracketTree
+                rounds={rounds}
+                roundLabel={(round) => <RoundHeading title={roundName(round, maxRound)} subtitle={`Round ${round}`} />}
+                renderMatch={(match) => (
+                  <EditableMatchBox
+                    match={match}
+                    player1={participantFor(match.player1_id)}
+                    player2={participantFor(match.player2_id)}
+                    saving={savingMatchId === match.id}
+                    editingLocked={editingLocked}
+                    onPatch={patchMatch}
+                    onSave={updateMatch}
+                    onUpdateParticipant={updateParticipant}
+                  />
+                )}
+                trailing={{
+                  head: <RoundHeading title="Winner" />,
+                  body: <ChampionBox name={champion?.name ?? null} />,
                 }}
-              >
-                {rounds.map(({ round, matches }) => (
-                  <div key={round} className="space-y-5">
-                    <div className="sticky left-0 flex items-center justify-between rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-                      <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-700">
-                        {roundName(round, maxRound)}
-                      </h2>
-                      <span className="text-xs font-semibold text-slate-400">Round {round}</span>
-                    </div>
-
-                    <div
-                      className="grid"
-                      style={{
-                        gap: `${20 + (2 ** (round - 1) - 1) * 76}px`,
-                        paddingTop: `${(2 ** (round - 1) - 1) * 70}px`,
-                      }}
-                    >
-                      {matches.map((match) => (
-                        <MatchCard
-                          key={match.id}
-                          match={match}
-                          player1={participantFor(match.player1_id)}
-                          player2={participantFor(match.player2_id)}
-                          saving={savingMatchId === match.id}
-                          editingLocked={editingLocked}
-                          onPatch={patchMatch}
-                          onSave={updateMatch}
-                          onUpdateParticipant={updateParticipant}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-
-                <div className="space-y-5" style={{ paddingTop: `${(2 ** maxRound - 1) * 35}px` }}>
-                  <div className="flex items-center justify-between rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-                    <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-700">
-                      Winner
-                    </h2>
-                  </div>
-                  <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white">
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-11 w-11 place-items-center rounded-full bg-amber-400 text-white">
-                          <Crown className="h-6 w-6" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
-                            Champion
-                          </p>
-                          <p className="text-xl font-black">{champion?.name ?? 'Awaiting final'}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+              />
             ) : hasNoTournaments ? (
               <Card className="border-sky-200 bg-white/85">
                 <CardContent className="space-y-4 p-8">
@@ -928,35 +885,26 @@ function EditableBracketSection({
 
   return (
     <section className="space-y-4">
-      <h2 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black uppercase tracking-[0.2em] text-slate-700 shadow-sm">
+      <h2 className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black uppercase tracking-[0.2em] text-slate-700 shadow-sm">
         {title}
       </h2>
-      <div
-        className="grid gap-6"
-        style={{
-          gridTemplateColumns: `repeat(${rounds.length}, 17rem)`,
-        }}
-      >
-        {rounds.map(({ round, matches: roundMatches }) => (
-          <div key={round} className="space-y-4">
-            <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-400">
-              Round {round}
-            </div>
-            {roundMatches.map((match) => (
-              <MatchCard
-                key={match.id}
-                match={match}
-                player1={participantFor(match.player1_id)}
-                player2={participantFor(match.player2_id)}
-                saving={savingMatchId === match.id}
-                editingLocked={editingLocked}
-                onPatch={onPatch}
-                onSave={onSave}
-                onUpdateParticipant={onUpdateParticipant}
-              />
-            ))}
-          </div>
-        ))}
+      <div className="overflow-x-auto pb-2">
+        <BracketTree
+          rounds={rounds}
+          roundLabel={(round) => <RoundHeading title={`Round ${round}`} />}
+          renderMatch={(match) => (
+            <EditableMatchBox
+              match={match}
+              player1={participantFor(match.player1_id)}
+              player2={participantFor(match.player2_id)}
+              saving={savingMatchId === match.id}
+              editingLocked={editingLocked}
+              onPatch={onPatch}
+              onSave={onSave}
+              onUpdateParticipant={onUpdateParticipant}
+            />
+          )}
+        />
       </div>
     </section>
   )
@@ -1202,63 +1150,24 @@ function DisplayPage() {
           </section>
         ) : bracket ? (
           <section className="min-w-0 overflow-x-auto pb-6">
-            <div
-              className="grid gap-8"
-              style={{
-                gridTemplateColumns: `repeat(${rounds.length}, 18rem) 15rem`,
-                minWidth: `${rounds.length * 320 + 240}px`,
+            <BracketTree
+              dark
+              rounds={rounds}
+              roundLabel={(round) => (
+                <RoundHeading dark title={roundName(round, maxRound)} subtitle={`Round ${round}`} />
+              )}
+              renderMatch={(match) => (
+                <DisplayMatchBox
+                  match={match}
+                  player1={participantFor(match.player1_id)}
+                  player2={participantFor(match.player2_id)}
+                />
+              )}
+              trailing={{
+                head: <RoundHeading dark title="Winner" />,
+                body: <ChampionBox dark name={champion?.name ?? null} />,
               }}
-            >
-              {rounds.map(({ round, matches }) => (
-                <div key={round} className="space-y-5">
-                  <div className="flex items-center justify-between rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                    <h2 className="text-sm font-black uppercase tracking-[0.22em] text-slate-200">
-                      {roundName(round, maxRound)}
-                    </h2>
-                    <span className="text-xs font-semibold text-slate-400">Round {round}</span>
-                  </div>
-                  <div
-                    className="grid"
-                    style={{
-                      gap: `${22 + (2 ** (round - 1) - 1) * 84}px`,
-                      paddingTop: `${(2 ** (round - 1) - 1) * 78}px`,
-                    }}
-                  >
-                    {matches.map((match) => (
-                      <DisplayMatchCard
-                        key={match.id}
-                        match={match}
-                        player1={participantFor(match.player1_id)}
-                        player2={participantFor(match.player2_id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              <div className="space-y-5" style={{ paddingTop: `${(2 ** maxRound - 1) * 39}px` }}>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  <h2 className="text-sm font-black uppercase tracking-[0.22em] text-slate-200">
-                    Winner
-                  </h2>
-                </div>
-                <Card className="border-amber-300/40 bg-gradient-to-br from-amber-300/25 to-white/10 text-white">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="grid h-14 w-14 place-items-center rounded-full bg-amber-400 text-slate-950">
-                        <Crown className="h-8 w-8" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">
-                          Champion
-                        </p>
-                        <p className="text-3xl font-black">{champion?.name ?? 'Awaiting final'}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+            />
           </section>
         ) : (
           <Card className="border-white/10 bg-white/10 text-white">
@@ -1323,97 +1232,183 @@ function DisplayBracketSection({ title, matches, participantFor }: DisplayBracke
 
   return (
     <section className="space-y-4">
-      <h2 className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black uppercase tracking-[0.22em] text-slate-200">
+      <h2 className="inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black uppercase tracking-[0.22em] text-slate-200">
         {title}
       </h2>
-      <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${rounds.length}, 18rem)` }}>
-        {rounds.map(({ round, matches: roundMatches }) => (
-          <div key={round} className="space-y-4">
-            <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-slate-400">
-              Round {round}
-            </div>
-            {roundMatches.map((match) => (
-              <DisplayMatchCard
-                key={match.id}
-                match={match}
-                player1={participantFor(match.player1_id)}
-                player2={participantFor(match.player2_id)}
-              />
-            ))}
-          </div>
-        ))}
+      <div className="overflow-x-auto pb-2">
+        <BracketTree
+          dark
+          rounds={rounds}
+          roundLabel={(round) => <RoundHeading dark title={`Round ${round}`} />}
+          renderMatch={(match) => (
+            <DisplayMatchBox
+              match={match}
+              player1={participantFor(match.player1_id)}
+              player2={participantFor(match.player2_id)}
+            />
+          )}
+        />
       </div>
     </section>
   )
 }
 
-type DisplayMatchCardProps = {
+type BracketRound = { round: number; matches: Match[] }
+
+type BracketTreeProps = {
+  rounds: BracketRound[]
+  roundLabel: (round: number, index: number) => ReactNode
+  renderMatch: (match: Match) => ReactNode
+  trailing?: { head: ReactNode; body: ReactNode }
+  dark?: boolean
+}
+
+function BracketTree({ rounds, roundLabel, renderMatch, trailing, dark }: BracketTreeProps) {
+  return (
+    <div className={cn('bkt', dark && 'bkt-dark')}>
+      {rounds.map(({ round, matches }, roundIndex) => (
+        <div key={round} className="bkt-round">
+          <div className="bkt-head">{roundLabel(round, roundIndex)}</div>
+          <div className="bkt-body">
+            {matches.map((match) => (
+              <div key={match.id} className="bkt-match">
+                {roundIndex > 0 ? <span className="bkt-join" /> : null}
+                {renderMatch(match)}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {trailing ? (
+        <div className="bkt-round">
+          <div className="bkt-head">{trailing.head}</div>
+          <div className="bkt-body">
+            <div className="bkt-match">
+              <span className="bkt-join" />
+              {trailing.body}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+type RoundHeadingProps = {
+  title: string
+  subtitle?: string
+  dark?: boolean
+}
+
+function RoundHeading({ title, subtitle, dark }: RoundHeadingProps) {
+  return (
+    <div
+      className={cn(
+        'flex h-9 items-center justify-between gap-2 rounded-full border px-3.5 text-xs font-black uppercase tracking-[0.18em] shadow-sm',
+        dark ? 'border-white/10 bg-white/10 text-slate-200' : 'border-slate-200 bg-white text-slate-700',
+      )}
+    >
+      <span className="truncate">{title}</span>
+      {subtitle ? (
+        <span className={cn('shrink-0 text-[0.6rem] font-semibold tracking-normal', dark ? 'text-slate-400' : 'text-slate-400')}>
+          {subtitle}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+type ChampionBoxProps = {
+  name: string | null
+  dark?: boolean
+}
+
+function ChampionBox({ name, dark }: ChampionBoxProps) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-xl border p-3 shadow-sm',
+        dark
+          ? 'border-amber-300/40 bg-gradient-to-br from-amber-300/25 to-white/5 text-white'
+          : 'border-amber-200 bg-gradient-to-br from-amber-50 to-white text-slate-950',
+      )}
+    >
+      <div className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-full', dark ? 'bg-amber-400 text-slate-950' : 'bg-amber-400 text-white')}>
+        <Crown className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className={cn('text-[0.6rem] font-semibold uppercase tracking-[0.18em]', dark ? 'text-amber-200' : 'text-amber-700')}>
+          Champion
+        </p>
+        <p className="truncate text-lg font-black leading-tight">{name ?? 'TBD'}</p>
+      </div>
+    </div>
+  )
+}
+
+const matchAccent: Record<Match['status'], string> = {
+  completed: 'border-l-emerald-500',
+  ready: 'border-l-orange-500',
+  pending: 'border-l-slate-300',
+}
+
+type DisplayMatchBoxProps = {
   match: Match
   player1: Participant | null
   player2: Participant | null
 }
 
-function DisplayMatchCard({ match, player1, player2 }: DisplayMatchCardProps) {
+function DisplayMatchBox({ match, player1, player2 }: DisplayMatchBoxProps) {
   return (
-    <Card className={cn('relative overflow-hidden bg-white/10 text-white', displayStatusClass(match.status))}>
-      <div
-        className={cn(
-          'absolute inset-x-0 top-0 h-1',
-          match.status === 'completed'
-            ? 'bg-emerald-400'
-            : match.status === 'ready'
-              ? 'bg-orange-400'
-              : 'bg-slate-500',
-        )}
-      />
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between text-sm">
-          <span>Match {match.position}</span>
-          <span className="capitalize text-slate-300">{match.status}</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <DisplayPlayerRow
-          participant={player1}
-          score={match.player1_score}
-          isWinner={match.winner_id === player1?.id}
-        />
-        <DisplayPlayerRow
-          participant={player2}
-          score={match.player2_score}
-          isWinner={match.winner_id === player2?.id}
-        />
-      </CardContent>
-    </Card>
+    <div
+      className={cn(
+        'overflow-hidden rounded-lg border border-l-4 border-white/10 bg-white/[0.07] text-white shadow-lg shadow-black/20',
+        matchAccent[match.status],
+        match.status === 'pending' && 'opacity-70',
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-white/10 px-2.5 py-1">
+        <span className="text-[0.6rem] font-bold uppercase tracking-[0.15em] text-slate-400">
+          Match {match.position}
+        </span>
+        <span className="text-[0.6rem] font-medium capitalize text-slate-400">{match.status}</span>
+      </div>
+      <DisplayRow participant={player1} score={match.player1_score} isWinner={match.winner_id === player1?.id} />
+      <div className="h-px bg-white/10" />
+      <DisplayRow participant={player2} score={match.player2_score} isWinner={match.winner_id === player2?.id} />
+    </div>
   )
 }
 
-type DisplayPlayerRowProps = {
+type DisplayRowProps = {
   participant: Participant | null
   score: number | null
   isWinner: boolean
 }
 
-function DisplayPlayerRow({ participant, score, isWinner }: DisplayPlayerRowProps) {
+function DisplayRow({ participant, score, isWinner }: DisplayRowProps) {
   return (
-    <div
-      className={cn(
-        'grid grid-cols-[2rem_1fr_3.5rem] items-center gap-3 rounded-xl border px-3 py-3',
-        isWinner ? 'border-emerald-300/40 bg-emerald-300/15' : 'border-white/10 bg-white/5',
-      )}
-    >
-      <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-xs font-black text-slate-300">
+    <div className={cn('flex items-center gap-2 px-2.5 py-2', isWinner && 'bg-emerald-400/15')}>
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-white/10 text-[0.65rem] font-bold text-slate-300">
         {participant?.seed ?? '-'}
       </span>
-      <span className={cn('truncate text-lg font-black', participant ? 'text-white' : 'text-slate-500')}>
+      <span
+        className={cn(
+          'flex-1 truncate text-sm',
+          participant ? 'font-bold text-white' : 'font-medium text-slate-500',
+          isWinner && 'text-emerald-200',
+        )}
+      >
         {participant?.name ?? 'TBD'}
       </span>
-      <span className="text-center text-2xl font-black">{score ?? '-'}</span>
+      <span className={cn('w-7 shrink-0 text-right text-base font-black tabular-nums', isWinner ? 'text-emerald-200' : 'text-slate-300')}>
+        {score ?? '-'}
+      </span>
     </div>
   )
 }
 
-type MatchCardProps = {
+type EditableMatchBoxProps = {
   match: Match
   player1: Participant | null
   player2: Participant | null
@@ -1424,7 +1419,7 @@ type MatchCardProps = {
   onUpdateParticipant: (id: number, name: string) => void
 }
 
-function MatchCard({
+function EditableMatchBox({
   match,
   player1,
   player2,
@@ -1433,163 +1428,171 @@ function MatchCard({
   onPatch,
   onSave,
   onUpdateParticipant,
-}: MatchCardProps) {
-  return (
-    <Card
-      className={cn(
-        'relative overflow-hidden bg-white/95 shadow-lg shadow-slate-200/50',
-        statusClass(match.status),
-      )}
-    >
-      <div
-        className={cn(
-          'absolute inset-x-0 top-0 h-1',
-          match.status === 'completed'
-            ? 'bg-emerald-500'
-            : match.status === 'ready'
-              ? 'bg-orange-500'
-              : 'bg-slate-300',
-        )}
-      />
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between text-sm">
-          <span>Match {match.position}</span>
-          <Badge
-            className={cn(
-              'capitalize',
-              match.status === 'completed'
-                ? 'bg-emerald-600'
-                : match.status === 'ready'
-                  ? 'bg-orange-500'
-                  : 'bg-slate-400',
-            )}
-          >
-            {match.status}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {match.player1_score !== null &&
-        match.player2_score !== null &&
-        match.player1_score === match.player2_score ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-            Tied scores need a manual winner before advancing.
-          </div>
-        ) : null}
-        <PlayerRow
-          slot="player1_score"
-          match={match}
-          participant={player1}
-          isWinner={match.winner_id === player1?.id}
-          onPatch={onPatch}
-          onUpdateParticipant={onUpdateParticipant}
-          onPickWinner={(winnerId) => onSave(match, winnerId)}
-          disabled={editingLocked || match.status === 'pending'}
-        />
-        <PlayerRow
-          slot="player2_score"
-          match={match}
-          participant={player2}
-          isWinner={match.winner_id === player2?.id}
-          onPatch={onPatch}
-          onUpdateParticipant={onUpdateParticipant}
-          onPickWinner={(winnerId) => onSave(match, winnerId)}
-          disabled={editingLocked || match.status === 'pending'}
-        />
-        {match.winner_id ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full bg-white"
-            disabled={saving || editingLocked}
-            onClick={() => onSave({ ...match, winner_id: null }, null)}
-          >
-            Clear winner
-          </Button>
-        ) : null}
-        <Button
-          size="sm"
-          variant="secondary"
-          className="w-full"
-          disabled={saving || editingLocked || match.status === 'pending'}
-          onClick={() => onSave(match)}
-        >
-          <Save className="h-3.5 w-3.5" /> {saving ? 'Saving...' : 'Save scores'}
-        </Button>
-      </CardContent>
-    </Card>
-  )
-}
-
-type PlayerRowProps = {
-  slot: 'player1_score' | 'player2_score'
-  match: Match
-  participant: Participant | null
-  isWinner: boolean
-  onPatch: (matchId: number, patch: Partial<Match>) => void
-  onUpdateParticipant: (id: number, name: string) => void
-  onPickWinner: (winnerId: number) => void
-  disabled: boolean
-}
-
-function PlayerRow({
-  slot,
-  match,
-  participant,
-  isWinner,
-  onPatch,
-  onUpdateParticipant,
-  onPickWinner,
-  disabled,
-}: PlayerRowProps) {
-  const score = match[slot]
+}: EditableMatchBoxProps) {
+  const disabled = editingLocked || match.status === 'pending'
+  const tied =
+    match.player1_score !== null &&
+    match.player2_score !== null &&
+    match.player1_score === match.player2_score
 
   return (
     <div
       className={cn(
-        'grid grid-cols-[1fr_4.25rem] gap-2 rounded-xl border p-2 transition-colors',
-        isWinner ? 'border-orange-300 bg-orange-50' : 'border-slate-200 bg-slate-50',
+        'overflow-hidden rounded-lg border border-l-4 border-slate-200 bg-white shadow-sm',
+        matchAccent[match.status],
+        match.status === 'pending' && 'opacity-80',
       )}
     >
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-xs font-bold text-slate-500 shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-2.5 py-1">
+        <span className="text-[0.6rem] font-bold uppercase tracking-[0.15em] text-slate-400">
+          Match {match.position}
+        </span>
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 text-[0.6rem] font-bold capitalize',
+            match.status === 'completed'
+              ? 'text-emerald-600'
+              : match.status === 'ready'
+                ? 'text-orange-600'
+                : 'text-slate-400',
+          )}
+        >
+          <span
+            className={cn(
+              'h-1.5 w-1.5 rounded-full',
+              match.status === 'completed' ? 'bg-emerald-500' : match.status === 'ready' ? 'bg-orange-500' : 'bg-slate-300',
+            )}
+          />
+          {match.status}
+        </span>
+      </div>
+
+      <EditableRow
+        slot="player1_score"
+        match={match}
+        participant={player1}
+        isWinner={match.winner_id === player1?.id}
+        disabled={disabled}
+        onPatch={onPatch}
+        onUpdateParticipant={onUpdateParticipant}
+        onPickWinner={(winnerId) => onSave(match, winnerId)}
+      />
+      <div className="h-px bg-slate-100" />
+      <EditableRow
+        slot="player2_score"
+        match={match}
+        participant={player2}
+        isWinner={match.winner_id === player2?.id}
+        disabled={disabled}
+        onPatch={onPatch}
+        onUpdateParticipant={onUpdateParticipant}
+        onPickWinner={(winnerId) => onSave(match, winnerId)}
+      />
+
+      {tied ? (
+        <p className="border-t border-amber-200 bg-amber-50 px-2.5 py-1 text-[0.65rem] font-medium text-amber-800">
+          Tied — pick a winner to advance.
+        </p>
+      ) : null}
+
+      {!disabled ? (
+        <div className="flex items-center gap-1 border-t border-slate-100 bg-slate-50/70 px-1.5 py-1.5">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 flex-1 text-xs"
+            disabled={saving}
+            onClick={() => onSave(match)}
+          >
+            <Save className="h-3.5 w-3.5" /> {saving ? 'Saving' : 'Save'}
+          </Button>
+          {match.winner_id ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 bg-white text-xs"
+              disabled={saving}
+              onClick={() => onSave({ ...match, winner_id: null }, null)}
+            >
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+type EditableRowProps = {
+  slot: 'player1_score' | 'player2_score'
+  match: Match
+  participant: Participant | null
+  isWinner: boolean
+  disabled: boolean
+  onPatch: (matchId: number, patch: Partial<Match>) => void
+  onUpdateParticipant: (id: number, name: string) => void
+  onPickWinner: (winnerId: number) => void
+}
+
+function EditableRow({
+  slot,
+  match,
+  participant,
+  isWinner,
+  disabled,
+  onPatch,
+  onUpdateParticipant,
+  onPickWinner,
+}: EditableRowProps) {
+  const score = match[slot]
+
+  return (
+    <div className={cn('flex gap-2 px-2 py-2 transition-colors', isWinner && 'bg-orange-50')}>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'grid h-5 w-5 shrink-0 place-items-center rounded-full text-[0.65rem] font-bold',
+              isWinner ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500',
+            )}
+          >
             {participant?.seed ?? '-'}
           </span>
           {participant ? (
-            <Input
+            <input
               defaultValue={participant.name}
-              className="h-8 bg-white font-semibold"
               disabled={disabled}
+              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-slate-900 hover:border-slate-200 focus:border-orange-300 focus:bg-white focus:outline-none disabled:hover:border-transparent"
               onBlur={(event) => onUpdateParticipant(participant.id, event.currentTarget.value)}
             />
           ) : (
-            <div className="flex h-8 items-center rounded-md px-3 text-sm font-semibold text-slate-400">
-              TBD
-            </div>
+            <span className="flex-1 px-1 text-sm font-semibold text-slate-400">TBD</span>
           )}
         </div>
         <Button
           type="button"
           size="sm"
           variant={isWinner ? 'default' : 'outline'}
-          className="h-7 w-full bg-white text-xs"
+          className="h-6 w-full bg-white text-[0.7rem]"
           disabled={!participant || disabled}
           onClick={() => participant && onPickWinner(participant.id)}
         >
-          {isWinner ? 'Winner' : 'Advance'}
+          {isWinner ? (
+            <>
+              <Check className="h-3 w-3" /> Winner
+            </>
+          ) : (
+            'Advance'
+          )}
         </Button>
       </div>
-      <Input
+      <input
         type="number"
         min={0}
         value={score ?? ''}
         placeholder="0"
-        className="h-full text-center text-lg font-black"
-        onChange={(event) => {
-          const value = event.currentTarget.value
-          onPatch(match.id, scorePatch(match, slot, value))
-        }}
+        className="w-10 shrink-0 self-stretch rounded border border-slate-200 bg-white text-center text-base font-black tabular-nums focus:border-orange-300 focus:outline-none disabled:bg-slate-50 disabled:text-slate-300"
+        onChange={(event) => onPatch(match.id, scorePatch(match, slot, event.currentTarget.value))}
         disabled={disabled || !match.player1_id || !match.player2_id}
       />
     </div>
@@ -1655,18 +1658,6 @@ function scorePatch(match: Match, slot: 'player1_score' | 'player2_score', rawVa
   }
 
   return { [slot]: nextMatch[slot], winner_id: null }
-}
-
-function statusClass(status: Match['status']) {
-  if (status === 'completed') return 'border-emerald-200'
-  if (status === 'ready') return 'border-orange-200'
-  return 'border-slate-200 opacity-80'
-}
-
-function displayStatusClass(status: Match['status']) {
-  if (status === 'completed') return 'border-emerald-300/30'
-  if (status === 'ready') return 'border-orange-300/30'
-  return 'border-white/10 opacity-80'
 }
 
 function formatDate(value: string) {

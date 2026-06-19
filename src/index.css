@@ -23,3 +23,81 @@ button,
 input {
   font: inherit;
 }
+
+/* ------------------------------------------------------------------ */
+/* Bracket tree layout + connector lines                              */
+/* ------------------------------------------------------------------ */
+
+.bkt {
+  display: flex;
+  align-items: stretch;
+  width: max-content;
+  --bkt-gap: 2.75rem; /* horizontal space between rounds */
+  --bkt-line: #cbd5e1;
+}
+
+.bkt-round {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 15rem;
+}
+
+.bkt-round + .bkt-round {
+  margin-left: var(--bkt-gap);
+}
+
+.bkt-head {
+  margin-bottom: 0.85rem;
+}
+
+.bkt-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: space-around;
+}
+
+.bkt-match {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.55rem 0;
+}
+
+/* incoming half-connector on the left edge (every round except the first) */
+.bkt-round:not(:first-child) .bkt-match::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: calc(var(--bkt-gap) / 2);
+  border-top: 2px solid var(--bkt-line);
+}
+
+/* outgoing half-connector on the right edge (every round except the last) */
+.bkt-round:not(:last-child) .bkt-match::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: calc(var(--bkt-gap) / 2);
+  border-top: 2px solid var(--bkt-line);
+}
+
+/* vertical bar joining the two feeder matches, sitting at the gap midpoint */
+.bkt-join {
+  position: absolute;
+  top: 25%;
+  height: 50%;
+  right: 100%;
+  margin-right: calc(var(--bkt-gap) / 2);
+  border-left: 2px solid var(--bkt-line);
+}
+
+/* dark display variant */
+.bkt-dark {
+  --bkt-line: rgba(255, 255, 255, 0.22);
+}
