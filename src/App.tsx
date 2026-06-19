@@ -466,6 +466,7 @@ function AdminPage() {
     round,
     matches: bracket?.matches.filter((match) => match.round === round) ?? [],
   }))
+  const slotLabel = makeSlotLabeler(bracket?.matches ?? [])
   const isCompleted = bracket?.tournament.status === 'Completed'
   const editingLocked = Boolean(isCompleted && !allowCompletedEdits)
   const joinUrl = bracket ? `${window.location.origin}/join/${bracket.tournament.join_code}` : ''
@@ -474,7 +475,7 @@ function AdminPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <section className="mx-auto flex w-full max-w-none flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="grid gap-5 rounded-3xl border border-white/70 bg-white/75 p-5 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_22rem] lg:p-8">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -744,6 +745,8 @@ function AdminPage() {
                     match={match}
                     player1={participantFor(match.player1_id)}
                     player2={participantFor(match.player2_id)}
+                    slot1Label={slotLabel(match, 1)}
+                    slot2Label={slotLabel(match, 2)}
                     saving={savingMatchId === match.id}
                     editingLocked={editingLocked}
                     onPatch={patchMatch}
@@ -809,12 +812,14 @@ function DoubleEliminationAdminBracket({
   const grandFinals = bracket.matches.filter((match) => match.bracket_group === 'grand_final')
   const resetFinal = grandFinals.find((match) => match.is_reset_final === 1)
   const showResetFinal = Boolean(resetFinal?.player1_id || resetFinal?.player2_id || resetFinal?.winner_id)
+  const slotLabel = makeSlotLabeler(bracket.matches)
 
   return (
     <div className="min-w-[64rem] space-y-8">
       <EditableBracketSection
         title="Winners Bracket"
         matches={bracket.matches.filter((match) => match.bracket_group === 'winners')}
+        slotLabel={slotLabel}
         savingMatchId={savingMatchId}
         editingLocked={editingLocked}
         participantFor={participantFor}
@@ -825,6 +830,7 @@ function DoubleEliminationAdminBracket({
       <EditableBracketSection
         title="Losers Bracket"
         matches={bracket.matches.filter((match) => match.bracket_group === 'losers')}
+        slotLabel={slotLabel}
         savingMatchId={savingMatchId}
         editingLocked={editingLocked}
         participantFor={participantFor}
@@ -835,6 +841,7 @@ function DoubleEliminationAdminBracket({
       <EditableBracketSection
         title="Grand Final"
         matches={grandFinals.filter((match) => match.is_reset_final === 0)}
+        slotLabel={slotLabel}
         savingMatchId={savingMatchId}
         editingLocked={editingLocked}
         participantFor={participantFor}
@@ -846,6 +853,7 @@ function DoubleEliminationAdminBracket({
         <EditableBracketSection
           title="Bracket Reset Final"
           matches={grandFinals.filter((match) => match.is_reset_final === 1)}
+          slotLabel={slotLabel}
           savingMatchId={savingMatchId}
           editingLocked={editingLocked}
           participantFor={participantFor}
@@ -861,6 +869,7 @@ function DoubleEliminationAdminBracket({
 type EditableBracketSectionProps = {
   title: string
   matches: Match[]
+  slotLabel: SlotLabeler
   savingMatchId: number | null
   editingLocked: boolean
   participantFor: (id: number | null) => Participant | null
@@ -872,6 +881,7 @@ type EditableBracketSectionProps = {
 function EditableBracketSection({
   title,
   matches,
+  slotLabel,
   savingMatchId,
   editingLocked,
   participantFor,
@@ -897,6 +907,8 @@ function EditableBracketSection({
               match={match}
               player1={participantFor(match.player1_id)}
               player2={participantFor(match.player2_id)}
+              slot1Label={slotLabel(match, 1)}
+              slot2Label={slotLabel(match, 2)}
               saving={savingMatchId === match.id}
               editingLocked={editingLocked}
               onPatch={onPatch}
@@ -1098,10 +1110,11 @@ function DisplayPage() {
     round,
     matches: bracket?.matches.filter((match) => match.round === round) ?? [],
   }))
+  const slotLabel = makeSlotLabeler(bracket?.matches ?? [])
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-8 px-5 py-6 sm:px-8">
+      <section className="mx-auto flex w-full max-w-none flex-col gap-8 px-5 py-6 sm:px-8">
         <header className="grid gap-5 rounded-3xl border border-white/10 bg-white/10 p-6 shadow-2xl shadow-black/30 backdrop-blur lg:grid-cols-[1fr_22rem]">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -1146,7 +1159,7 @@ function DisplayPage() {
 
         {bracket?.tournament.format === 'Double Elimination' ? (
           <section className="min-w-0 overflow-x-auto pb-6">
-            <DoubleEliminationDisplayBracket bracket={bracket} participantFor={participantFor} />
+            <DoubleEliminationDisplayBracket bracket={bracket} participantFor={participantFor} slotLabel={slotLabel} />
           </section>
         ) : bracket ? (
           <section className="min-w-0 overflow-x-auto pb-6">
@@ -1161,6 +1174,8 @@ function DisplayPage() {
                   match={match}
                   player1={participantFor(match.player1_id)}
                   player2={participantFor(match.player2_id)}
+                  slot1Label={slotLabel(match, 1)}
+                  slot2Label={slotLabel(match, 2)}
                 />
               )}
               trailing={{
@@ -1184,9 +1199,10 @@ function DisplayPage() {
 type DoubleEliminationDisplayBracketProps = {
   bracket: BracketState
   participantFor: (id: number | null) => Participant | null
+  slotLabel: SlotLabeler
 }
 
-function DoubleEliminationDisplayBracket({ bracket, participantFor }: DoubleEliminationDisplayBracketProps) {
+function DoubleEliminationDisplayBracket({ bracket, participantFor, slotLabel }: DoubleEliminationDisplayBracketProps) {
   const grandFinals = bracket.matches.filter((match) => match.bracket_group === 'grand_final')
   const resetFinal = grandFinals.find((match) => match.is_reset_final === 1)
   const showResetFinal = Boolean(resetFinal?.player1_id || resetFinal?.player2_id || resetFinal?.winner_id)
@@ -1197,22 +1213,26 @@ function DoubleEliminationDisplayBracket({ bracket, participantFor }: DoubleElim
         title="Winners Bracket"
         matches={bracket.matches.filter((match) => match.bracket_group === 'winners')}
         participantFor={participantFor}
+        slotLabel={slotLabel}
       />
       <DisplayBracketSection
         title="Losers Bracket"
         matches={bracket.matches.filter((match) => match.bracket_group === 'losers')}
         participantFor={participantFor}
+        slotLabel={slotLabel}
       />
       <DisplayBracketSection
         title="Grand Final"
         matches={grandFinals.filter((match) => match.is_reset_final === 0)}
         participantFor={participantFor}
+        slotLabel={slotLabel}
       />
       {showResetFinal ? (
         <DisplayBracketSection
           title="Bracket Reset Final"
           matches={grandFinals.filter((match) => match.is_reset_final === 1)}
           participantFor={participantFor}
+          slotLabel={slotLabel}
         />
       ) : null}
     </div>
@@ -1223,9 +1243,10 @@ type DisplayBracketSectionProps = {
   title: string
   matches: Match[]
   participantFor: (id: number | null) => Participant | null
+  slotLabel: SlotLabeler
 }
 
-function DisplayBracketSection({ title, matches, participantFor }: DisplayBracketSectionProps) {
+function DisplayBracketSection({ title, matches, participantFor, slotLabel }: DisplayBracketSectionProps) {
   const rounds = roundsFor(matches)
 
   if (matches.length === 0) return null
@@ -1245,6 +1266,8 @@ function DisplayBracketSection({ title, matches, participantFor }: DisplayBracke
               match={match}
               player1={participantFor(match.player1_id)}
               player2={participantFor(match.player2_id)}
+              slot1Label={slotLabel(match, 1)}
+              slot2Label={slotLabel(match, 2)}
             />
           )}
         />
@@ -1356,9 +1379,11 @@ type DisplayMatchBoxProps = {
   match: Match
   player1: Participant | null
   player2: Participant | null
+  slot1Label?: string | null
+  slot2Label?: string | null
 }
 
-function DisplayMatchBox({ match, player1, player2 }: DisplayMatchBoxProps) {
+function DisplayMatchBox({ match, player1, player2, slot1Label, slot2Label }: DisplayMatchBoxProps) {
   return (
     <div
       className={cn(
@@ -1373,20 +1398,21 @@ function DisplayMatchBox({ match, player1, player2 }: DisplayMatchBoxProps) {
         </span>
         <span className="text-[0.6rem] font-medium capitalize text-slate-400">{match.status}</span>
       </div>
-      <DisplayRow participant={player1} score={match.player1_score} isWinner={match.winner_id === player1?.id} />
+      <DisplayRow participant={player1} emptyLabel={slot1Label} score={match.player1_score} isWinner={match.winner_id === player1?.id} />
       <div className="h-px bg-white/10" />
-      <DisplayRow participant={player2} score={match.player2_score} isWinner={match.winner_id === player2?.id} />
+      <DisplayRow participant={player2} emptyLabel={slot2Label} score={match.player2_score} isWinner={match.winner_id === player2?.id} />
     </div>
   )
 }
 
 type DisplayRowProps = {
   participant: Participant | null
+  emptyLabel?: string | null
   score: number | null
   isWinner: boolean
 }
 
-function DisplayRow({ participant, score, isWinner }: DisplayRowProps) {
+function DisplayRow({ participant, emptyLabel, score, isWinner }: DisplayRowProps) {
   return (
     <div className={cn('flex items-center gap-2 px-2.5 py-2', isWinner && 'bg-emerald-400/15')}>
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-white/10 text-[0.65rem] font-bold text-slate-300">
@@ -1394,12 +1420,13 @@ function DisplayRow({ participant, score, isWinner }: DisplayRowProps) {
       </span>
       <span
         className={cn(
-          'flex-1 truncate text-sm',
-          participant ? 'font-bold text-white' : 'font-medium text-slate-500',
+          'flex-1 truncate',
+          participant ? 'text-sm font-bold text-white' : 'text-xs font-medium italic text-slate-500',
           isWinner && 'text-emerald-200',
         )}
+        title={!participant ? emptyLabel ?? undefined : undefined}
       >
-        {participant?.name ?? 'TBD'}
+        {participant?.name ?? emptyLabel ?? 'TBD'}
       </span>
       <span className={cn('w-7 shrink-0 text-right text-base font-black tabular-nums', isWinner ? 'text-emerald-200' : 'text-slate-300')}>
         {score ?? '-'}
@@ -1412,6 +1439,8 @@ type EditableMatchBoxProps = {
   match: Match
   player1: Participant | null
   player2: Participant | null
+  slot1Label?: string | null
+  slot2Label?: string | null
   saving: boolean
   editingLocked: boolean
   onPatch: (matchId: number, patch: Partial<Match>) => void
@@ -1423,6 +1452,8 @@ function EditableMatchBox({
   match,
   player1,
   player2,
+  slot1Label,
+  slot2Label,
   saving,
   editingLocked,
   onPatch,
@@ -1471,6 +1502,7 @@ function EditableMatchBox({
         slot="player1_score"
         match={match}
         participant={player1}
+        emptyLabel={slot1Label}
         isWinner={match.winner_id === player1?.id}
         disabled={disabled}
         onPatch={onPatch}
@@ -1482,6 +1514,7 @@ function EditableMatchBox({
         slot="player2_score"
         match={match}
         participant={player2}
+        emptyLabel={slot2Label}
         isWinner={match.winner_id === player2?.id}
         disabled={disabled}
         onPatch={onPatch}
@@ -1527,6 +1560,7 @@ type EditableRowProps = {
   slot: 'player1_score' | 'player2_score'
   match: Match
   participant: Participant | null
+  emptyLabel?: string | null
   isWinner: boolean
   disabled: boolean
   onPatch: (matchId: number, patch: Partial<Match>) => void
@@ -1538,6 +1572,7 @@ function EditableRow({
   slot,
   match,
   participant,
+  emptyLabel,
   isWinner,
   disabled,
   onPatch,
@@ -1566,7 +1601,9 @@ function EditableRow({
               onBlur={(event) => onUpdateParticipant(participant.id, event.currentTarget.value)}
             />
           ) : (
-            <span className="flex-1 px-1 text-sm font-semibold text-slate-400">TBD</span>
+            <span className="flex-1 truncate px-1 text-xs font-medium italic text-slate-400" title={emptyLabel ?? undefined}>
+              {emptyLabel ?? 'TBD'}
+            </span>
           )}
         </div>
         <Button
@@ -1612,6 +1649,38 @@ function roundsFor(matches: Match[]) {
     round,
     matches: matches.filter((match) => match.round === round),
   }))
+}
+
+type SlotLabeler = (match: Match, slot: 1 | 2) => string | null
+
+function bracketShort(group: Match['bracket_group']) {
+  if (group === 'winners') return 'WB'
+  if (group === 'losers') return 'LB'
+  if (group === 'grand_final') return 'GF'
+  return ''
+}
+
+function sourceRef(match: Match) {
+  const short = bracketShort(match.bracket_group)
+  return short ? `${short} R${match.round} M${match.position}` : `R${match.round} M${match.position}`
+}
+
+// Returns a label describing which match feeds a still-empty slot, e.g.
+// "Loser of WB R2 M1" or "Winner of LB R1 M2" — null when nothing feeds it (real bye).
+function makeSlotLabeler(matches: Match[]): SlotLabeler {
+  return (target, slot) => {
+    const winnerFeeder = matches.find(
+      (m) => m.next_match_id === target.id && m.next_slot === slot,
+    )
+    if (winnerFeeder) return `Winner of ${sourceRef(winnerFeeder)}`
+
+    const loserFeeder = matches.find(
+      (m) => m.loser_next_match_id === target.id && m.loser_next_slot === slot,
+    )
+    if (loserFeeder) return `Loser of ${sourceRef(loserFeeder)}`
+
+    return null
+  }
 }
 
 function championIdFor(bracket: BracketState) {
