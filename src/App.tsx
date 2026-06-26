@@ -62,6 +62,7 @@ function App() {
     <Routes>
       <Route path="/" element={<CreateBracketPage />} />
       <Route path="/brackets" element={<BracketsPage />} />
+      <Route path="/leaderboard" element={<LeaderboardPage />} />
       <Route path="/tournaments/:id" element={<AdminPage />} />
       <Route path="/tournaments/:id/display" element={<DisplayPage />} />
       <Route path="/join/:joinCode" element={<JoinPage />} />
@@ -105,9 +106,14 @@ function CreateBracketPage() {
           <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
             Simple Bracket
           </Link>
-          <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/brackets">
-            View brackets
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" to="/leaderboard">
+              Leaderboard
+            </Link>
+            <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/brackets">
+              View brackets
+            </Link>
+          </div>
         </nav>
 
         <header className="grid gap-6 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_24rem] lg:p-8">
@@ -207,9 +213,14 @@ function BracketsPage() {
           <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
             Simple Bracket
           </Link>
-          <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/">
-            Create bracket
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" to="/leaderboard">
+              Leaderboard
+            </Link>
+            <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/">
+              Create bracket
+            </Link>
+          </div>
         </nav>
 
         <header className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:p-8">
@@ -242,6 +253,121 @@ function BracketsPage() {
               </div>
             ) : null}
             {!loaded ? <p className="text-sm text-slate-500">Loading brackets...</p> : null}
+          </CardContent>
+        </Card>
+      </section>
+    </main>
+  )
+}
+
+type LeaderboardEntry = {
+  name: string
+  wins: number
+  lastWonAt: string | null
+}
+
+function LeaderboardPage() {
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    fetch('/api/leaderboard', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Could not load the leaderboard (${response.status}).`)
+        return response.json() as Promise<LeaderboardEntry[]>
+      })
+      .then((loadedEntries) => {
+        setError(null)
+        setEntries(loadedEntries)
+        setLoaded(true)
+      })
+      .catch((caughtError: unknown) => {
+        if (caughtError instanceof DOMException && caughtError.name === 'AbortError') return
+        setLoaded(true)
+        setError(caughtError instanceof Error ? caughtError.message : 'Could not load the leaderboard.')
+      })
+
+    return () => controller.abort()
+  }, [])
+
+  const rankAccent = (rank: number) => {
+    if (rank === 1) return 'bg-amber-400 text-white'
+    if (rank === 2) return 'bg-slate-300 text-slate-900'
+    if (rank === 3) return 'bg-orange-300 text-white'
+    return 'bg-slate-100 text-slate-500'
+  }
+
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
+      <section className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+        <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-3 shadow-lg shadow-orange-200/20 backdrop-blur">
+          <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
+            Simple Bracket
+          </Link>
+          <div className="flex items-center gap-2">
+            <Link className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" to="/brackets">
+              View brackets
+            </Link>
+            <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/">
+              Create bracket
+            </Link>
+          </div>
+        </nav>
+
+        <header className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:p-8">
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-600">
+            Leaderboard
+          </p>
+          <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950 sm:text-6xl">
+            Tournament champions
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+            Every completed bracket adds a win to its champion. Names are tallied across all
+            tournaments — win more brackets to climb the board.
+          </p>
+        </header>
+
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <Card className="bg-white/85">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-orange-600" /> Most Wins
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {entries.map((entry, index) => {
+              const rank = index + 1
+              return (
+                <div
+                  key={entry.name}
+                  className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+                >
+                  <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-black', rankAccent(rank))}>
+                    {rank <= 3 ? <Crown className="h-4 w-4" /> : rank}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-base font-bold text-slate-900">
+                    {entry.name}
+                  </span>
+                  <Badge className="bg-orange-500">
+                    {entry.wins} {entry.wins === 1 ? 'win' : 'wins'}
+                  </Badge>
+                </div>
+              )
+            })}
+            {loaded && entries.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                No champions yet. Complete a bracket to put someone on the board.
+              </div>
+            ) : null}
+            {!loaded ? <p className="text-sm text-slate-500">Loading leaderboard...</p> : null}
           </CardContent>
         </Card>
       </section>

@@ -655,6 +655,78 @@ function updateTournamentStatus(tournamentId: number) {
   )
 }
 
+// Resolves the 1st-place finisher (champion) of a tournament, or null if not yet
+// crowned. Mirrors the completion logic in updateTournamentStatus.
+function championIdFor(tournamentId: number, format: TournamentFormat) {
+  if (format === 'Double Elimination') {
+    const resetFinal = db
+      .prepare(
+        "SELECT winner_id FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 1 LIMIT 1",
+      )
+      .get(tournamentId) as { winner_id: number | null } | undefined
+    if (resetFinal?.winner_id) return resetFinal.winner_id
+
+    const grandFinal = db
+      .prepare(
+        "SELECT player1_id, winner_id FROM matches WHERE tournament_id = ? AND bracket_group = 'grand_final' AND is_reset_final = 0 LIMIT 1",
+      )
+      .get(tournamentId) as { player1_id: number | null; winner_id: number | null } | undefined
+    if (grandFinal?.winner_id && grandFinal.player1_id && grandFinal.winner_id === grandFinal.player1_id) {
+      return grandFinal.winner_id
+    }
+
+    return null
+  }
+
+  const final = db
+    .prepare(
+      "SELECT winner_id FROM matches WHERE tournament_id = ? AND bracket_group = 'single' ORDER BY round DESC, position ASC LIMIT 1",
+    )
+    .get(tournamentId) as { winner_id: number | null } | undefined
+
+  return final?.winner_id ?? null
+}
+
+// Tallies championships across all completed tournaments, grouped by participant
+// name. Read-only — computed on demand, no schema changes.
+function getLeaderboard() {
+  const completed = db
+    .prepare(
+      "SELECT id, format, completed_at FROM tournaments WHERE status = 'Completed'",
+    )
+    .all() as { id: number; format: TournamentFormat; completed_at: string | null }[]
+
+  const tally = new Map<string, { name: string; wins: number; lastWonAt: string | null }>()
+
+  for (const tournament of completed) {
+    const championId = championIdFor(tournament.id, tournament.format)
+    if (!championId) continue
+
+    const champion = db
+      .prepare('SELECT name FROM participants WHERE id = ?')
+      .get(championId) as { name: string } | undefined
+    if (!champion) continue
+
+    const existing = tally.get(champion.name)
+    if (existing) {
+      existing.wins += 1
+      if ((tournament.completed_at ?? '') > (existing.lastWonAt ?? '')) {
+        existing.lastWonAt = tournament.completed_at
+      }
+    } else {
+      tally.set(champion.name, {
+        name: champion.name,
+        wins: 1,
+        lastWonAt: tournament.completed_at,
+      })
+    }
+  }
+
+  return Array.from(tally.values()).sort(
+    (a, b) => b.wins - a.wins || (b.lastWonAt ?? '').localeCompare(a.lastWonAt ?? ''),
+  )
+}
+
 function ensureSeeded() {
   const count = db.prepare('SELECT COUNT(*) as count FROM tournaments').get() as { count: number }
   if (count.count === 0) {
@@ -927,6 +999,10 @@ app.get('/api/tournaments', (_request, response) => {
       )
       .all(),
   )
+})
+
+app.get('/api/leaderboard', (_request, response) => {
+  response.json(getLeaderboard())
 })
 
 app.get('/api/tournament', (_request, response) => {
