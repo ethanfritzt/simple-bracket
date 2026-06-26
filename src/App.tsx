@@ -57,6 +57,53 @@ const maxRegistrationSpots = 16
 type TournamentFormat = 'Single Elimination' | 'Double Elimination'
 const tournamentFormats: TournamentFormat[] = ['Single Elimination', 'Double Elimination']
 
+type NavLink = { label: string; to: string; primary?: boolean }
+
+function NavBar({ links, dark = false }: { links: NavLink[]; dark?: boolean }) {
+  return (
+    <nav
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-3 rounded-full border px-4 py-3 shadow-lg backdrop-blur',
+        dark
+          ? 'border-white/10 bg-white/10 shadow-black/20'
+          : 'border-white/70 bg-white/75 shadow-orange-200/20',
+      )}
+    >
+      <Link
+        className={cn(
+          'text-3xl font-black uppercase tracking-[0.1em] flex items-center gap-2',
+          dark ? 'text-orange-500' : 'text-orange-500',
+        )}
+        to="/"
+      > [<p className="text-xl font-black uppercase tracking-[0.22em] pt-1">
+        simple
+      </p>]
+
+      </Link>
+      <div className="flex items-center gap-2">
+        {links.map((link) => (
+          <Link
+            key={link.to}
+            className={cn(
+              'rounded-full px-4 py-2 text-sm font-semibold',
+              link.primary
+                ? dark
+                  ? 'bg-orange-500 text-white hover:bg-orange-400'
+                  : 'bg-slate-950 text-white hover:bg-slate-800'
+                : dark
+                  ? 'bg-white/10 text-white hover:bg-white/20'
+                  : 'bg-slate-100 text-slate-900 hover:bg-slate-200',
+            )}
+            to={link.to}
+          >
+            {link.label}
+          </Link>
+        ))}
+      </div>
+    </nav>
+  )
+}
+
 function App() {
   return (
     <Routes>
@@ -102,19 +149,12 @@ function CreateBracketPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
       <section className="mx-auto flex min-h-screen w-full max-w-5xl flex-col justify-center gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-3 shadow-lg shadow-orange-200/20 backdrop-blur">
-          <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
-            Simple Bracket
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" to="/leaderboard">
-              Leaderboard
-            </Link>
-            <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/brackets">
-              View brackets
-            </Link>
-          </div>
-        </nav>
+        <NavBar
+          links={[
+            { label: 'Leaderboard', to: '/leaderboard' },
+            { label: 'View brackets', to: '/brackets', primary: true },
+          ]}
+        />
 
         <header className="grid gap-6 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_24rem] lg:p-8">
           <div className="space-y-5">
@@ -209,19 +249,12 @@ function BracketsPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-3 shadow-lg shadow-orange-200/20 backdrop-blur">
-          <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
-            Simple Bracket
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" to="/leaderboard">
-              Leaderboard
-            </Link>
-            <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/">
-              Create bracket
-            </Link>
-          </div>
-        </nav>
+        <NavBar
+          links={[
+            { label: 'Leaderboard', to: '/leaderboard' },
+            { label: 'Create bracket', to: '/', primary: true },
+          ]}
+        />
 
         <header className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-600">
@@ -303,19 +336,12 @@ function LeaderboardPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-3 shadow-lg shadow-orange-200/20 backdrop-blur">
-          <Link className="text-sm font-black uppercase tracking-[0.22em] text-orange-600" to="/">
-            Simple Bracket
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" to="/brackets">
-              View brackets
-            </Link>
-            <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" to="/">
-              Create bracket
-            </Link>
-          </div>
-        </nav>
+        <NavBar
+          links={[
+            { label: 'View brackets', to: '/brackets' },
+            { label: 'Create bracket', to: '/', primary: true },
+          ]}
+        />
 
         <header className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-orange-200/30 backdrop-blur lg:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-600">
@@ -602,6 +628,15 @@ function AdminPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fed7aa,transparent_32rem),linear-gradient(135deg,#fff7ed,#f8fafc_45%,#e0f2fe)] text-slate-950">
       <section className="mx-auto flex w-full max-w-none flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <NavBar
+          links={[
+            { label: 'Leaderboard', to: '/leaderboard' },
+            { label: 'Brackets', to: '/brackets' },
+            ...(routeTournamentId
+              ? [{ label: 'Display mode', to: `/tournaments/${routeTournamentId}/display`, primary: true }]
+              : []),
+          ]}
+        />
         <header className="grid gap-5 rounded-3xl border border-white/70 bg-white/75 p-5 shadow-xl shadow-orange-200/30 backdrop-blur lg:grid-cols-[1fr_22rem] lg:p-8">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -1134,7 +1169,20 @@ function JoinPage() {
   const registrationOpen = bracket?.tournament.registration_status === 'open'
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,#fed7aa,transparent_34rem),linear-gradient(135deg,#fff7ed,#eff6ff)] px-4 py-8 text-slate-950">
+    <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,#fed7aa,transparent_34rem),linear-gradient(135deg,#fff7ed,#eff6ff)] text-slate-950">
+      <div className="px-4 pt-8 pb-4">
+        <div className="mx-auto w-full max-w-xl">
+          <NavBar
+            links={[
+              { label: 'Brackets', to: '/brackets' },
+              ...(bracket
+                ? [{ label: 'Watch live', to: `/tournaments/${bracket.tournament.id}/display`, primary: true }]
+                : []),
+            ]}
+          />
+        </div>
+      </div>
+      <div className="flex flex-1 items-center justify-center px-4 pb-8">
       <Card className="w-full max-w-xl border-white/80 bg-white/85 shadow-xl backdrop-blur">
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
@@ -1186,6 +1234,7 @@ function JoinPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </main>
   )
 }
@@ -1241,6 +1290,15 @@ function DisplayPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <section className="mx-auto flex w-full max-w-none flex-col gap-8 px-5 py-6 sm:px-8">
+        <NavBar
+          dark
+          links={[
+            { label: 'Brackets', to: '/brackets' },
+            ...(tournamentId
+              ? [{ label: 'Admin view', to: `/tournaments/${tournamentId}`, primary: true }]
+              : []),
+          ]}
+        />
         <header className="grid gap-5 rounded-3xl border border-white/10 bg-white/10 p-6 shadow-2xl shadow-black/30 backdrop-blur lg:grid-cols-[1fr_22rem]">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
