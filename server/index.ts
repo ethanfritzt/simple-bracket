@@ -552,6 +552,22 @@ function removeParticipant(participantId: number) {
   return remove()
 }
 
+// Randomly reassigns seeds 1..N so bracket pairings are a fresh draw rather than
+// registration order. Fisher–Yates over the participant ids.
+function shuffleParticipantSeeds(tournamentId: number) {
+  const participants = db
+    .prepare('SELECT id FROM participants WHERE tournament_id = ?')
+    .all(tournamentId) as { id: number }[]
+
+  for (let i = participants.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[participants[i], participants[j]] = [participants[j], participants[i]]
+  }
+
+  const update = db.prepare('UPDATE participants SET seed = ? WHERE id = ?')
+  participants.forEach((participant, index) => update.run(index + 1, participant.id))
+}
+
 function startTournament(tournamentId: number) {
   const start = db.transaction(() => {
     const tournament = db
@@ -566,6 +582,7 @@ function startTournament(tournamentId: number) {
     db.prepare(
       "UPDATE tournaments SET status = 'In Progress', registration_status = 'started', bracket_size = ?, completed_at = NULL WHERE id = ?",
     ).run(count.count, tournamentId)
+    shuffleParticipantSeeds(tournamentId)
     generateMatches(tournamentId)
 
     return true

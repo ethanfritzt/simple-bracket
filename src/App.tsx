@@ -1015,9 +1015,10 @@ function EditableBracketSection({
   onSave,
   onUpdateParticipant,
 }: EditableBracketSectionProps) {
-  const rounds = roundsFor(matches)
+  const contested = withoutByes(matches, slotLabel)
+  const rounds = roundsFor(contested)
 
-  if (matches.length === 0) return null
+  if (contested.length === 0) return null
 
   return (
     <section className="space-y-4">
@@ -1373,9 +1374,10 @@ type DisplayBracketSectionProps = {
 }
 
 function DisplayBracketSection({ title, matches, participantFor, slotLabel }: DisplayBracketSectionProps) {
-  const rounds = roundsFor(matches)
+  const contested = withoutByes(matches, slotLabel)
+  const rounds = roundsFor(contested)
 
-  if (matches.length === 0) return null
+  if (contested.length === 0) return null
 
   return (
     <section className="space-y-4">
@@ -1775,6 +1777,19 @@ function roundsFor(matches: Match[]) {
     round,
     matches: matches.filter((match) => match.round === round),
   }))
+}
+
+// A bye is a match where only one side can ever hold an entrant: the other slot
+// has no player and no feeder match producing one. These are auto-advanced and
+// shouldn't render as empty cards — only show matches with a real contest.
+function isByeMatch(match: Match, slotLabel: SlotLabeler) {
+  const slot1Live = Boolean(match.player1_id) || Boolean(slotLabel(match, 1))
+  const slot2Live = Boolean(match.player2_id) || Boolean(slotLabel(match, 2))
+  return slot1Live !== slot2Live
+}
+
+function withoutByes(matches: Match[], slotLabel: SlotLabeler) {
+  return matches.filter((match) => !isByeMatch(match, slotLabel))
 }
 
 type SlotLabeler = (match: Match, slot: 1 | 2) => string | null
